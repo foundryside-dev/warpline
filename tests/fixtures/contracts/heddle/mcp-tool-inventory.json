@@ -1,0 +1,34 @@
+{
+  "schema": "heddle.draft.mcp_tool_inventory.v1",
+  "status": "pre-admission-draft",
+  "tools": [
+    {
+      "name": "blast_radius",
+      "mutates": false,
+      "local_only": true,
+      "peer_side_effects": [],
+      "authority_boundary": "Traverses Heddle's dated snapshots; does not answer current graph truth."
+    },
+    {
+      "name": "changed",
+      "mutates": false,
+      "local_only": true,
+      "peer_side_effects": [],
+      "authority_boundary": "Returns temporal change facts from git/Heddle store."
+    },
+    {
+      "name": "reverify",
+      "mutates": false,
+      "local_only": true,
+      "peer_side_effects": [],
+      "authority_boundary": "Returns reverify worklists; does not file work or govern changes."
+    },
+    {
+      "name": "timeline",
+      "mutates": false,
+      "local_only": true,
+      "peer_side_effects": [],
+      "authority_boundary": "Returns per-entity change timeline; does not resolve current structure."
+    }
+  ]
+}

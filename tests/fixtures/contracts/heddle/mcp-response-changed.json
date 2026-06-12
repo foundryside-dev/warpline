@@ -1,0 +1,31 @@
+{
+  "schema": "heddle.draft.changed.v1",
+  "ok": true,
+  "data": {
+    "repo": "example",
+    "rev_range": "HEAD~1..HEAD",
+    "changed": [
+      {
+        "entity_key": {
+          "locator": "src/pkg/mod.py::fn",
+          "sei": null
+        },
+        "change_kind": "modified",
+        "actor": "agent:codex",
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "at": "2026-06-13T00:00:00Z"
+      }
+    ],
+    "enrichment": {
+      "sei": "absent",
+      "edges": "absent"
+    }
+  },
+  "warnings": [],
+  "meta": {
+    "producer": {
+      "tool": "heddle",
+      "version": "0.1.0"
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema": "heddle.draft.reverify.v1",
+  "ok": true,
+  "data": {
+    "repo": "example",
+    "rev_range": "HEAD~1..HEAD",
+    "completeness": "NO_SNAPSHOT",
+    "staleness": {
+      "snapshot_commit": null,
+      "commits_behind": null
+    },
+    "worklist": [
+      {
+        "entity_key": {
+          "locator": "src/pkg/mod.py::fn",
+          "sei": null
+        },
+        "reason": "changed in rev_range",
+        "suggested_verification": [
+          {
+            "kind": "test",
+            "command": "run tests touching this entity if known"
+          }
+        ]
+      }
+    ],
+    "enrichment": {
+      "sei": "absent",
+      "edges": "absent"
+    }
+  },
+  "warnings": [
+    "NO_SNAPSHOT: downstream traversal unavailable; changed set only"
+  ],
+  "meta": {
+    "producer": {
+      "tool": "heddle",
+      "version": "0.1.0"
+    }
+  }
+}
