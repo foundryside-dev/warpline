@@ -7,9 +7,30 @@ from pathlib import Path
 from heddle import __version__, commands
 from heddle.git import backfill, ingest_commit
 from heddle.install import install_hook
-from heddle.loomweave import LoomweaveProbe
+from heddle.loomweave import LoomweaveMcpClient, LoomweaveProbe, ToolClient
 from heddle.productization import read_productization_decision
 from heddle.store import HeddleStore, default_store_path
+
+
+def _optional_sei_client(
+    repo: Path,
+    *,
+    enabled: bool,
+    command: str,
+) -> tuple[ToolClient | None, dict[str, object] | None]:
+    if not enabled:
+        return None, None
+    probe = LoomweaveProbe(repo=repo, command=command).probe()
+    resolution = {
+        "status": probe.get("status"),
+        "reason": probe.get("reason"),
+    }
+    if probe.get("status") != "available":
+        return None, resolution
+    return LoomweaveMcpClient(repo=repo, command=command), {
+        "status": "available",
+        "version": probe.get("version"),
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,11 +43,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     backfill_parser = sub.add_parser("backfill")
     backfill_parser.add_argument("--repo", type=Path, default=Path("."))
+    backfill_parser.add_argument("--resolve-sei", action="store_true")
+    backfill_parser.add_argument("--loomweave-command", default="loomweave")
     backfill_parser.add_argument("--json", action="store_true")
 
     ingest = sub.add_parser("ingest-commit")
     ingest.add_argument("sha")
     ingest.add_argument("--repo", type=Path, default=Path("."))
+    ingest.add_argument("--resolve-sei", action="store_true")
+    ingest.add_argument("--loomweave-command", default="loomweave")
 
     loomweave_probe = sub.add_parser("loomweave-probe")
     loomweave_probe.add_argument("--repo", type=Path, default=Path("."))
@@ -83,14 +108,26 @@ def main(argv: list[str] | None = None) -> int:
         print(str(hook))
         return 0
     if args.command == "backfill":
+        sei_client, sei_resolution = _optional_sei_client(
+            args.repo,
+            enabled=args.resolve_sei,
+            command=args.loomweave_command,
+        )
         with HeddleStore.open(default_store_path(args.repo)) as store:
-            report = backfill(store, args.repo)
+            report = backfill(store, args.repo, sei_client=sei_client)
+        if sei_resolution is not None:
+            report["sei_resolution"] = sei_resolution
         print(json.dumps(report, sort_keys=True) if args.json else report)
         return 0
     if args.command == "ingest-commit":
         try:
+            sei_client, _sei_resolution = _optional_sei_client(
+                args.repo,
+                enabled=args.resolve_sei,
+                command=args.loomweave_command,
+            )
             with HeddleStore.open(default_store_path(args.repo)) as store:
-                ingest_commit(store, args.repo, args.sha)
+                ingest_commit(store, args.repo, args.sha, sei_client=sei_client)
         except Exception as exc:  # fail-soft hook contract
             with HeddleStore.open(default_store_path(args.repo)) as store:
                 store.log_health(args.repo, "HOOK_INGEST_FAILED", str(exc))

@@ -21,8 +21,9 @@ least as good as existing tools in solo mode and better with federation members.
 
 ## Current blockers
 
-- Production ingest/backfill does not resolve SEI through Loomweave or another
-  published identity surface.
+- Production ingest/backfill can optionally resolve SEI through Loomweave's
+  published `entity_resolve` surface; default hook ingest still avoids the
+  dependency.
 - Production snapshot capture now has CLI/MCP entrypoints, but `blast_radius` /
   `reverify` still need dogfood proof that captured snapshots make the workflow
   at least as useful as existing tools.
@@ -51,6 +52,8 @@ least as good as existing tools in solo mode and better with federation members.
   files degrade to file locators.
 - Added `capture-snapshot` / `capture_snapshot` as the production path for
   dated Loomweave edge snapshot capture into local Heddle state.
+- Added optional Loomweave-backed SEI resolution for `backfill` and
+  `ingest-commit`, with clean degradation when Loomweave is unavailable.
 
 ## Next session, start here
 

@@ -110,11 +110,41 @@ class LoomweaveMcpClient:
 
 def resolve_sei_for_locator(client: ToolClient, locator: str) -> str | None:
     try:
-        payload = client.call_tool("entity_resolve", {"id": locator})
+        payload = client.call_tool("entity_resolve", {"qualnames": [locator]})
     except Exception:
         return None
+    sei = _sei_from_resolve_results(payload, locator)
+    if sei is not None:
+        return sei
     entity = payload.get("entity") if isinstance(payload, dict) else None
     if not isinstance(entity, dict):
         return None
     sei = entity.get("sei")
     return sei if isinstance(sei, str) and sei else None
+
+
+def _sei_from_resolve_results(payload: dict[str, object], locator: str) -> str | None:
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return None
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        qualname = result.get("qualname")
+        if isinstance(qualname, str) and qualname != locator:
+            continue
+        entity = result.get("entity")
+        if isinstance(entity, dict):
+            sei = entity.get("sei")
+            if isinstance(sei, str) and sei:
+                return sei
+        candidates = result.get("candidates")
+        if not isinstance(candidates, list):
+            continue
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            sei = candidate.get("sei")
+            if isinstance(sei, str) and sei:
+                return sei
+    return None

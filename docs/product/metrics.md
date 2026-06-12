@@ -15,6 +15,7 @@ Last read: 2026-06-13
 | MCP primary capability coverage | 4 of 4 core capabilities exposed through `tools/list`: `changed`, `timeline`, `blast_radius`, `reverify` | 4 of 4 | 2026-06-13 |
 | Changed-set fast-path latency | p95 <= 250 ms on the planted spike corpus | 48.793924 ms measured in `spike/measurements.json` | 2026-06-13 |
 | Reverify honesty coverage | 100% of blast-radius and reverify responses include completeness, staleness, and enrichment state | Honest `NO_SNAPSHOT` exists; production snapshot capture now has CLI/MCP entrypoints but dogfood proof is pending | 2026-06-13 |
+| SEI enrichment path | Backfill and ingest can populate opaque SEI when Loomweave resolves an entity; absence degrades explicitly | Optional CLI path implemented; MCP/dogfood value proof pending | 2026-06-13 |
 | Productization evidence gate | Release-candidate gate includes spike harness, productization gate, lint, types, tests, and member-diff guard | Blocked by `Readiness verdict: not-ready` | 2026-06-13 |
 
 ## Guardrails

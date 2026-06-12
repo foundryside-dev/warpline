@@ -9,9 +9,10 @@ to pass productization or admission readiness.
 
 Blocking gaps from the live review:
 
-- Standalone parity fails because production ingest does not yet resolve SEI,
-  production queries do not yet capture edge snapshots, and changed-set output
-  only recently gained the ids needed to feed `blast_radius`/`reverify`.
+- Standalone parity still fails because optional production SEI resolution and
+  snapshot capture now exist but have not yet been dogfooded into an end-to-end
+  parity/uplift gate; changed-set output only recently gained the ids needed to
+  feed `blast_radius`/`reverify`.
 - Federation uplift fails because Loomweave integration is adapter/test-only and
   Filigree, Wardline, Legis, and Charter enrichment paths are not wired through
   published surfaces.

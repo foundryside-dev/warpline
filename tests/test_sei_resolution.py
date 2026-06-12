@@ -9,12 +9,20 @@ from heddle.store import HeddleStore
 class FakeClient:
     def call_tool(self, name: str, arguments: dict[str, object]) -> dict[str, object]:
         assert name == "entity_resolve"
-        assert arguments == {"id": "python:function:pkg.mod::fn"}
+        assert arguments == {"qualnames": ["python:function:pkg.mod::fn"]}
         return {
-            "entity": {
-                "id": "python:function:pkg.mod::fn",
-                "sei": "loomweave:eid:opaque-value",
-            }
+            "results": [
+                {
+                    "qualname": "python:function:pkg.mod::fn",
+                    "result_kind": "resolved",
+                    "candidates": [
+                        {
+                            "id": "python:function:pkg.mod::fn",
+                            "sei": "loomweave:eid:opaque-value",
+                        }
+                    ],
+                }
+            ]
         }
 
 
@@ -28,9 +36,33 @@ def test_resolve_sei_for_locator_returns_opaque_value() -> None:
 def test_resolve_sei_for_locator_degrades_when_absent() -> None:
     class MissingClient:
         def call_tool(self, name: str, arguments: dict[str, object]) -> dict[str, object]:
-            return {"entity": {"id": "python:function:pkg.mod::fn"}}
+            return {
+                "results": [
+                    {
+                        "qualname": "python:function:pkg.mod::fn",
+                        "result_kind": "unresolved",
+                        "candidates": [],
+                    }
+                ]
+            }
 
     assert resolve_sei_for_locator(MissingClient(), "python:function:pkg.mod::fn") is None
+
+
+def test_resolve_sei_for_locator_accepts_legacy_entity_payload() -> None:
+    class LegacyClient:
+        def call_tool(self, name: str, arguments: dict[str, object]) -> dict[str, object]:
+            return {
+                "entity": {
+                    "id": "python:function:pkg.mod::fn",
+                    "sei": "loomweave:eid:legacy-value",
+                }
+            }
+
+    assert (
+        resolve_sei_for_locator(LegacyClient(), "python:function:pkg.mod::fn")
+        == "loomweave:eid:legacy-value"
+    )
 
 
 def test_store_persists_sei_without_parsing(tmp_path: Path) -> None:

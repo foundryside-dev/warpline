@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from heddle.locators import python_entity_locators
+from heddle.loomweave import ToolClient, resolve_sei_for_locator
 from heddle.store import HeddleStore
 
 
@@ -83,15 +84,42 @@ def _locators_for_path(repo: Path, sha: str, path: str) -> list[str]:
     return python_entity_locators(path, source)
 
 
-def backfill(store: HeddleStore, repo: Path, since: str | None = None) -> dict[str, Any]:
+def _sei_for_locator(sei_client: ToolClient | None, locator: str) -> str | None:
+    if sei_client is None:
+        return None
+    return resolve_sei_for_locator(sei_client, locator)
+
+
+def _record_sei_stats(
+    stats: dict[str, int],
+    sei_client: ToolClient | None,
+    sei: str | None,
+) -> None:
+    if sei_client is None:
+        return
+    if sei is None:
+        stats["absent"] += 1
+    else:
+        stats["resolved"] += 1
+
+
+def backfill(
+    store: HeddleStore,
+    repo: Path,
+    since: str | None = None,
+    sei_client: ToolClient | None = None,
+) -> dict[str, Any]:
     repo_id = store.ensure_repo(repo)
     count = 0
+    sei_stats = {"resolved": 0, "absent": 0}
     for sha in _commits(repo, since=since):
         meta = _commit_meta(repo, sha)
         store.upsert_commit(repo_id, meta)
         for status, path in _name_status(repo, sha):
             for locator in _locators_for_path(repo, sha, path):
-                key_id = store.ensure_entity_key(repo_id, locator=locator, sei=None, commit_sha=sha)
+                sei = _sei_for_locator(sei_client, locator)
+                _record_sei_stats(sei_stats, sei_client, sei)
+                key_id = store.ensure_entity_key(repo_id, locator=locator, sei=sei, commit_sha=sha)
                 store.append_change_event(
                     repo_id=repo_id,
                     entity_key_id=key_id,
@@ -102,21 +130,29 @@ def backfill(store: HeddleStore, repo: Path, since: str | None = None) -> dict[s
                     changed_at=meta["authored_at"],
                 )
         count += 1
-    return {"commits": count}
+    return {"commits": count, "sei": sei_stats}
 
 
-def ingest_commit(store: HeddleStore, repo: Path, sha: str) -> dict[str, Any]:
+def ingest_commit(
+    store: HeddleStore,
+    repo: Path,
+    sha: str,
+    sei_client: ToolClient | None = None,
+) -> dict[str, Any]:
     repo_id = store.ensure_repo(repo)
     resolved = _git(repo, ["rev-parse", sha]).strip()
     meta = _commit_meta(repo, resolved)
     store.upsert_commit(repo_id, meta)
     changed = 0
+    sei_stats = {"resolved": 0, "absent": 0}
     for status, path in _name_status(repo, resolved):
         for locator in _locators_for_path(repo, resolved, path):
+            sei = _sei_for_locator(sei_client, locator)
+            _record_sei_stats(sei_stats, sei_client, sei)
             key_id = store.ensure_entity_key(
                 repo_id,
                 locator=locator,
-                sei=None,
+                sei=sei,
                 commit_sha=resolved,
             )
             store.append_change_event(
@@ -129,4 +165,4 @@ def ingest_commit(store: HeddleStore, repo: Path, sha: str) -> dict[str, Any]:
                 changed_at=meta["authored_at"],
             )
             changed += 1
-    return {"commit": resolved, "changes": changed}
+    return {"commit": resolved, "changes": changed, "sei": sei_stats}
