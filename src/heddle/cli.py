@@ -7,6 +7,7 @@ from pathlib import Path
 from heddle import __version__, commands
 from heddle.git import backfill, ingest_commit
 from heddle.install import install_hook
+from heddle.loomweave import LoomweaveProbe
 from heddle.store import HeddleStore, default_store_path
 
 
@@ -25,6 +26,11 @@ def build_parser() -> argparse.ArgumentParser:
     ingest = sub.add_parser("ingest-commit")
     ingest.add_argument("sha")
     ingest.add_argument("--repo", type=Path, default=Path("."))
+
+    loomweave_probe = sub.add_parser("loomweave-probe")
+    loomweave_probe.add_argument("--repo", type=Path, default=Path("."))
+    loomweave_probe.add_argument("--command", dest="loomweave_command", default="loomweave")
+    loomweave_probe.add_argument("--json", action="store_true")
 
     changed_parser = sub.add_parser("changed")
     changed_parser.add_argument("--repo", type=Path, default=Path("."))
@@ -61,6 +67,10 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:  # fail-soft hook contract
             with HeddleStore.open(default_store_path(args.repo)) as store:
                 store.log_health(args.repo, "HOOK_INGEST_FAILED", str(exc))
+        return 0
+    if args.command == "loomweave-probe":
+        payload = LoomweaveProbe(repo=args.repo, command=args.loomweave_command).probe()
+        print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
         return 0
     if args.command == "changed":
         payload = commands.changed(args.repo, args.rev_range)
