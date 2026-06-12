@@ -63,3 +63,38 @@ class LoomweaveProbe:
                 "version": version,
             }
         return {"status": "available", "version": version, "tools": tools}
+
+
+class LoomweaveMcpClient:
+    def __init__(self, repo: Path, command: str = "loomweave") -> None:
+        self.repo = repo
+        self.command = command
+
+    def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        request = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        }
+        proc = subprocess.run(
+            [self.command, "serve", "--path", str(self.repo)],
+            input=json.dumps(request) + "\n",
+            check=False,
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr[-1000:])
+        envelope = json.loads(proc.stdout.splitlines()[-1])
+        if "error" in envelope:
+            raise RuntimeError(str(envelope["error"]))
+        text = envelope["result"]["content"][0]["text"]
+        payload = json.loads(text)
+        if not isinstance(payload, dict):
+            raise RuntimeError("loomweave tool returned non-object payload")
+        return payload
+
+    def neighborhood(self, entity: str) -> dict[str, Any]:
+        return self.call_tool("entity_neighborhood_get", {"id": entity, "limit": 100})
