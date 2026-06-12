@@ -1,0 +1,7 @@
+{
+  "backfill_events_per_second": 24.52472433106239,
+  "changed_latency_ms": 48.793924,
+  "hook_ingest_exit_code": 0,
+  "planted_recall": 1.0,
+  "snapshot_completeness": "NO_SNAPSHOT"
+}
