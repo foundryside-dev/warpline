@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from heddle.propagation import blast_radius as compute_blast_radius
 from heddle.store import HeddleStore, default_store_path
 
 
@@ -40,4 +41,15 @@ def timeline(repo: Path, entity: str) -> dict[str, Any]:
             "entity": entity,
             "events": store.timeline(repo, entity),
             "enrichment": {"sei": "absent", "edges": "absent"},
+        }
+
+
+def blast_radius(
+    repo: Path, changed_entity_key_ids: list[int], depth: int = 2
+) -> dict[str, Any]:
+    with HeddleStore.open(default_store_path(repo)) as store:
+        return {
+            "heddle_schema_version": store.schema_version(),
+            "query": "blast_radius",
+            **compute_blast_radius(store, repo, changed_entity_key_ids, depth),
         }

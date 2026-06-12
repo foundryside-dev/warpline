@@ -28,6 +28,22 @@ TOOLS = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "blast_radius",
+        "description": (
+            "Return downstream affected entities from stored dated snapshots. Read-only."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "repo": {"type": "string"},
+                "changed_entity_key_ids": {"type": "array", "items": {"type": "integer"}},
+                "depth": {"type": "integer", "minimum": 0, "maximum": 5},
+            },
+            "required": ["repo", "changed_entity_key_ids"],
+            "additionalProperties": False,
+        },
+    },
 ]
 
 
@@ -56,6 +72,15 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
         return _tool_result(id_value, commands.changed(Path(args["repo"]), args.get("rev_range")))
     if name == "timeline":
         return _tool_result(id_value, commands.timeline(Path(args["repo"]), args["entity"]))
+    if name == "blast_radius":
+        return _tool_result(
+            id_value,
+            commands.blast_radius(
+                Path(args["repo"]),
+                [int(value) for value in args["changed_entity_key_ids"]],
+                int(args.get("depth", 2)),
+            ),
+        )
     return {"jsonrpc": "2.0", "id": id_value, "error": {"code": -32601, "message": str(name)}}
 
 
