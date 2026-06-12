@@ -36,7 +36,9 @@ Heddle is now treated inside this repo as a first-class product candidate. Its
 primary user is the coding agent trying to finish or review a change without
 guessing at blast radius. The MCP surface is therefore a product surface, not a
 transport wrapper: if an agent cannot discover and use Heddle from `tools/list`
-and structured responses alone, that is a P0 product defect.
+and structured responses alone, that is a P0 product defect. The minimum bar is
+solo-mode parity with existing tools and better answers when federation member
+enrichment is present.
 
 Federation admission is still not claimed here. The current product decision is
 recorded in [`docs/product/decisions/0001-product-candidate-ownership.md`](docs/product/decisions/0001-product-candidate-ownership.md):

@@ -16,9 +16,10 @@ around the MCP surface because agents experience Heddle primarily through
 
 ## Success metric
 
-Agent impact answer success rate reaches 8 of 10 dogfood diffs answered through
-MCP with changed-set plus reverify context in 2 tool calls or fewer, without
-manual grep, before admission recommendation.
+Agent impact answer success rate reaches 8 of 10 dogfood diffs with solo-mode
+parity against existing tools through MCP in 2 tool calls or fewer, and 8 of 10
+federation-enriched dogfood diffs with a better answer than existing tools
+before admission recommendation.
 
 Baseline: not yet measured as a 10-diff dogfood run. Planted corpus and contract
 tests pass as of 2026-06-13.
@@ -26,26 +27,31 @@ tests pass as of 2026-06-13.
 ## Acceptance criteria (falsifiable)
 
 1. SUCCESS - An agent starting from MCP `tools/list` can discover the core flow
-   and answer changed-set plus reverify context for at least 8 of 10 dogfood
-   diffs in 2 tool calls or fewer.
+   and answer changed-set plus reverify context with solo-mode parity against
+   existing tools for at least 8 of 10 dogfood diffs in 2 tool calls or fewer.
    Reject branch: If an agent must inspect raw SQLite or manually grep for more
-   than 2 of 10 dogfood diffs, the bet is rejected and an MCP refactor plan is
-   opened.
-2. MCP STRUCTURE - Every core MCP response includes schema/version, query
+   than 2 of 10 solo-mode dogfood diffs, the bet is rejected and an MCP refactor
+   plan is opened.
+2. FEDERATION UPLIFT - When federation member enrichment is available, at least
+   8 of 10 federation-enriched dogfood diffs produce a more actionable answer
+   than existing tools alone.
+   Reject branch: If enriched answers are merely equal to existing tools, the
+   federation value claim is unproven and the bet is rejected.
+3. MCP STRUCTURE - Every core MCP response includes schema/version, query
    metadata, enrichment state, warnings when degraded, and actionable next-step
    fields where applicable.
    Reject branch: any core response that returns opaque text without structured
    recovery fields blocks acceptance.
-3. FEDERATION BOUNDARY - Heddle responses identify absent, stale, skipped, or
+4. FEDERATION BOUNDARY - Heddle responses identify absent, stale, skipped, or
    no-snapshot enrichment without claiming sibling-owned current truth.
    Reject branch: any response that treats Loomweave, Charter, Legis, Wardline,
    or Filigree data as Heddle-owned truth blocks acceptance.
-4. SOLO MODE - With no sibling enrichment, Heddle still returns useful
+5. SOLO MODE - With no sibling enrichment, Heddle still returns useful
    locator-keyed changed/timeline/reverify facts and explicit `NO_SNAPSHOT` or
    absent enrichment state.
    Reject branch: sibling absence causing crash, empty ambiguity, or hidden
    degradation blocks acceptance.
-5. RELEASE HYGIENE - The release-candidate gate passes with member-diff guard,
+6. RELEASE HYGIENE - The release-candidate gate passes with member-diff guard,
    spike harness, productization gate, lint, types, and tests.
    Reject branch: any Heddle-caused sibling repo diff or failing gate blocks
    acceptance.

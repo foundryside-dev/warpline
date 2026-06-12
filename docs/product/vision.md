@@ -57,7 +57,8 @@ Heddle does not own work state, trust policy, governance, or obligations.
 - Do not auto-file, auto-close, allow, block, sign off, waive, or adjudicate.
 - Do not require sibling installation for the core local workflow.
 - Do not hide absence, staleness, or degraded enrichment.
-- Do not ship an MCP surface that is harder for agents than manual grep.
+- Do not ship an MCP surface that is worse than existing tools in solo mode or
+  fails to become better with federation members.
 - Do not become hosted telemetry, SaaS analytics, or a public service.
 
 ## Authority grant

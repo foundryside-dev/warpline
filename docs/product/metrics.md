@@ -6,7 +6,7 @@ Last read: 2026-06-13
 
 | Metric | Target (falsifiable) | Current | Read on | Trend |
 |--------|----------------------|---------|---------|-------|
-| Agent impact answer success rate | 8 of 10 dogfood diffs can be answered through MCP with changed-set plus reverify context in 2 tool calls or fewer, without manual grep, before admission recommendation | Not yet measured as a 10-diff dogfood run; planted corpus MCP/CLI slices pass | 2026-06-13 | baseline pending |
+| Agent impact answer success rate | 8 of 10 dogfood diffs show solo parity with existing tools through MCP in 2 tool calls or fewer; 8 of 10 federation-enriched dogfood diffs show federation uplift over existing tools before admission recommendation | Not yet measured as a 10-diff dogfood run; planted corpus MCP/CLI slices pass | 2026-06-13 | baseline pending |
 
 ## Input metrics
 
@@ -29,8 +29,9 @@ Last read: 2026-06-13
 ## Reading notes
 
 - The north-star is deliberately agent-workflow based. Heddle wins only when an
-  agent can use MCP to make a better completion/reverify decision than manual
-  grep would provide.
+  agent can use MCP to make a completion/reverify decision at least as well as
+  existing tools in solo mode, and better when federation member enrichment is
+  available.
 - The spike has a `go` recommendation, but admission remains owner-reserved.
 - Any MCP regression that forces manual database inspection, raw grep, or
   sibling-specific tribal knowledge counts against the north-star.

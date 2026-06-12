@@ -13,8 +13,9 @@ Heddle now has a passing release-candidate gate, a `go` spike recommendation,
 core CLI/MCP surfaces, dated snapshot state, reverify worklists, and
 Heddle-owned draft federation contracts. The remaining risk is no longer "can a
 prototype exist"; it is whether Heddle is treated as a coherent product whose
-MCP surface is easier for agents than manual grep and whose federation posture
-does not blur sibling authority boundaries.
+MCP surface is at least as good as existing tools in solo mode, better with
+federation members, and whose federation posture does not blur sibling
+authority boundaries.
 
 ## Options considered
 
@@ -39,10 +40,11 @@ this decision.
 ## Rationale
 
 Option 2 is the only option that solves the real product gap without crossing
-the authority boundary. It makes the bet falsifiable: if MCP is not easier for
-agents than manual grep, Heddle fails as a product candidate no matter how much
-implementation exists. It also makes sibling boundaries testable by keeping
-Heddle-owned contracts and consumer tickets separate from sibling-owned work.
+the authority boundary. It makes the bet falsifiable: if MCP is not at least as
+good as existing tools in solo mode and better with federation members, Heddle
+fails as a product candidate no matter how much implementation exists. It also
+makes sibling boundaries testable by keeping Heddle-owned contracts and consumer
+tickets separate from sibling-owned work.
 
 ## Reversal trigger
 

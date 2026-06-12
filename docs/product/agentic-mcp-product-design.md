@@ -8,8 +8,9 @@ authority boundaries, ask the core questions, and act on the result without
 reading source code, raw SQLite, or sibling-specific tribal knowledge.
 
 MCP deficiencies are P0 product defects. They are not minor polish. If the MCP
-surface is harder to use than manual grep, Heddle has no reason to exist. The
-right response is refactor, not workaround.
+surface is not at least as good as existing tools in solo mode and better with
+federation members, Heddle has no reason to exist. The right response is
+refactor, not workaround.
 
 ## Agent job
 
@@ -62,8 +63,9 @@ store paths, snapshot internals, or Loomweave implementation details.
 
 Heddle can be argued as a first-class Weft federation member only when:
 
-- solo mode is useful without siblings
-- pair mode enriches through published sibling surfaces only
+- solo mode is at least as good as existing tools without siblings
+- pair mode is better with federation members through published sibling
+  surfaces only
 - MCP contracts are discoverable and fixture-backed
 - release-candidate gates prove member repo cleanliness
 - admission artifacts separate Heddle-owned facts from sibling-owned authority

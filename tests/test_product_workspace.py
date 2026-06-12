@@ -35,6 +35,8 @@ def test_mcp_product_design_treats_agent_surface_as_primary() -> None:
     text = read_product_doc("agentic-mcp-product-design.md")
     assert "MCP deficiencies are P0 product defects" in text
     assert "Heddle has no reason to exist" in text
+    assert "at least as good as existing tools" in text
+    assert "better with federation members" in text
     assert "tools/list is the front door" in text
     assert "manual grep" in text
     assert "first-class Weft federation member" in text
@@ -44,6 +46,8 @@ def test_product_metrics_are_falsifiable_and_guard_federation_boundaries() -> No
     text = read_product_doc("metrics.md")
     assert "Target (falsifiable)" in text
     assert "8 of 10 dogfood diffs" in text
+    assert "solo parity" in text
+    assert "federation uplift" in text
     assert "Member repo diff violations" in text
     assert "0" in text
 

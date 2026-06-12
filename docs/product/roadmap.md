@@ -18,7 +18,8 @@ Do not compute WSJF here; hand the committed bet over for sequencing.
 ## Next (shaped, decreasing certainty)
 
 - **MCP usability hardening** - improve tool discovery, schemas, recoverable
-  errors, and agent next steps until Heddle is easier than manual grep.
+  errors, and agent next steps until Heddle is at least as good as existing
+  tools in solo mode and better with federation members.
 - **Bounded live-repo ingestion strategy** - replace unbounded live-member
   backfill with explicit bounded, incremental, and resumable workflows.
 - **Post-admission consumer package** - turn Heddle-owned draft contracts into
