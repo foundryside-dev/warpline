@@ -249,3 +249,19 @@ class HeddleStore:
             params,
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def timeline(self, repo: Path, entity: str) -> list[dict[str, object]]:
+        repo_id = self._repo_id(repo)
+        rows = self.conn.execute(
+            """
+            SELECT ce.commit_sha, ce.path, ce.change_kind, ce.actor, ce.changed_at,
+                   ek.locator, ek.sei
+              FROM change_events ce
+              JOIN entity_keys ek ON ek.id = ce.entity_key_id
+             WHERE ce.repo_id = ?
+               AND (ek.locator = ? OR ek.sei = ?)
+             ORDER BY ce.changed_at, ce.id
+            """,
+            (repo_id, entity, entity),
+        ).fetchall()
+        return [dict(row) for row in rows]
