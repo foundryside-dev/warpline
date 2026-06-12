@@ -8,18 +8,16 @@ Do not compute WSJF here; hand the committed bet over for sequencing.
 
 ## Now (committed, in-flight)
 
-- **Agent-first MCP productization** - make MCP the primary Heddle experience,
-  not a wrapper over CLI internals. Metric: Agent impact answer success rate.
-  Decision: PDR-0001. Spec: PRD-0001.
-- **Federation admission readiness** - keep the product candidate useful in
-  solo mode while making pairwise integration clean after owner admission.
-  Metric: boundary-safe release candidate gate. Decision: PDR-0001.
+- **Agent-first MCP readiness recovery** - make MCP the primary Heddle
+  experience, not a wrapper over CLI internals, and retire the live-review
+  blockers before reopening productization. Metric: Agent impact answer success
+  rate. Decision: PDR-0001. Spec: PRD-0001.
+- **Federation uplift proof** - keep solo mode useful while adding real
+  published-surface enrichment paths that make Heddle better with federation
+  members. Metric: 8 of 10 federation dogfood diffs show uplift.
 
 ## Next (shaped, decreasing certainty)
 
-- **MCP usability hardening** - improve tool discovery, schemas, recoverable
-  errors, and agent next steps until Heddle is at least as good as existing
-  tools in solo mode and better with federation members.
 - **Bounded live-repo ingestion strategy** - replace unbounded live-member
   backfill with explicit bounded, incremental, and resumable workflows.
 - **Post-admission consumer package** - turn Heddle-owned draft contracts into

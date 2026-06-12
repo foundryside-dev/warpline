@@ -17,6 +17,13 @@ def read_productization_decision(
     if not report_path.exists():
         return ProductizationDecision(False, "missing", "spike report not found")
     text = report_path.read_text(encoding="utf-8")
+    readiness_verdict = _readiness_verdict(text)
+    if readiness_verdict in {"not-ready", "no-go", "park-until-cutover"}:
+        return ProductizationDecision(
+            False,
+            readiness_verdict,
+            f"readiness verdict is {readiness_verdict}",
+        )
     recommendation = _recommendation(text)
     if recommendation == "go":
         return ProductizationDecision(True, recommendation, "spike recommendation is go")
@@ -27,6 +34,14 @@ def read_productization_decision(
             f"spike recommendation is {recommendation}",
         )
     return ProductizationDecision(False, "unknown", "spike report has no recognized recommendation")
+
+
+def _readiness_verdict(text: str) -> str:
+    for line in text.splitlines():
+        normalized = line.strip().lower()
+        if normalized.startswith("readiness verdict:"):
+            return normalized.split(":", 1)[1].strip().split(maxsplit=1)[0]
+    return "unknown"
 
 
 def _recommendation(text: str) -> str:

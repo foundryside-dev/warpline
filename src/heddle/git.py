@@ -19,6 +19,15 @@ def _git(repo: Path, args: list[str]) -> str:
     ).stdout
 
 
+def _git_bytes(repo: Path, args: list[str]) -> bytes:
+    return subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    ).stdout
+
+
 def _change_kind(status: str) -> str:
     return {"A": "added", "M": "modified", "D": "removed", "R": "moved"}.get(
         status[0], "modified"
@@ -60,8 +69,8 @@ def _name_status(repo: Path, sha: str) -> list[tuple[str, str]]:
 
 def _file_at_commit(repo: Path, sha: str, path: str) -> str | None:
     try:
-        return _git(repo, ["show", f"{sha}:{path}"])
-    except subprocess.CalledProcessError:
+        return _git_bytes(repo, ["show", f"{sha}:{path}"]).decode("utf-8")
+    except (subprocess.CalledProcessError, UnicodeDecodeError):
         return None
 
 

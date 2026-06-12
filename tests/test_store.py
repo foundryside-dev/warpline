@@ -5,12 +5,18 @@ from pathlib import Path
 from heddle.store import HeddleStore, default_store_path
 
 
-def test_default_store_path_is_outside_repo(tmp_path: Path) -> None:
+def test_default_store_path_uses_weft_member_runtime_tree(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    path = default_store_path(repo, base_dir=tmp_path / "state")
-    assert path.parent == tmp_path / "state"
-    assert repo not in path.parents
+    path = default_store_path(repo)
+    assert path == repo / ".weft" / "heddle" / "heddle.db"
+
+
+def test_default_store_path_honors_explicit_store_dir(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    path = default_store_path(repo, base_dir=tmp_path / "state" / "heddle")
+    assert path == tmp_path / "state" / "heddle" / "heddle.db"
 
 
 def test_store_initializes_schema(tmp_path: Path) -> None:

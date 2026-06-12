@@ -4,8 +4,12 @@
   "data": {
     "repo": "example",
     "rev_range": "HEAD~1..HEAD",
+    "changed_entity_key_ids": [
+      1
+    ],
     "changed": [
       {
+        "entity_key_id": 1,
         "entity_key": {
           "locator": "src/pkg/mod.py::fn",
           "sei": null
@@ -16,6 +20,18 @@
         "at": "2026-06-13T00:00:00Z"
       }
     ],
+    "next_actions": {
+      "reverify": {
+        "tool": "reverify",
+        "arguments": {
+          "repo": "example",
+          "changed_entity_key_ids": [
+            1
+          ],
+          "depth": 2
+        }
+      }
+    },
     "enrichment": {
       "sei": "absent",
       "edges": "absent"

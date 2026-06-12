@@ -15,6 +15,7 @@
  M www/styles.css
 ## /home/john/legis
 ## /home/john/loomweave
+ M crates/loomweave-mcp/src/lib.rs
 ## /home/john/charter
 ?? src/charter/__pycache__/
 ?? tests/__pycache__/

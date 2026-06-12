@@ -1,5 +1,25 @@
 # Heddle Spike Report
 
+Readiness verdict: not-ready
+
+Current live-review verdict as of 2026-06-13: the prototype is disciplined but
+not product-ready and not member-grade. The historical bounded spike result
+below is retained as evidence that a scaffold exists; it is no longer sufficient
+to pass productization or admission readiness.
+
+Blocking gaps from the live review:
+
+- Standalone parity fails because production ingest does not yet resolve SEI,
+  production queries do not yet capture edge snapshots, and changed-set output
+  only recently gained the ids needed to feed `blast_radius`/`reverify`.
+- Federation uplift fails because Loomweave integration is adapter/test-only and
+  Filigree, Wardline, Legis, and Charter enrichment paths are not wired through
+  published surfaces.
+- MCP and federation-bar defects remain product blockers: malformed MCP input
+  must fail recoverably, every tool needs agent-facing schemas, runtime state
+  must live under `.weft/heddle/`, and hostile/undecodable files must degrade
+  per file rather than kill the run.
+
 ## Q1: Loomweave Read Path
 
 Status: available.
@@ -53,4 +73,6 @@ The planted-change query returned `python:function:planted.py::planted` for `HEA
 
 The bounded spike path is already more agent-friendly than manual grep for the planted corpus: `heddle changed --rev-range HEAD~1..HEAD --json` returns structured entity-level change facts with actor, commit, locator, path, and enrichment state. Full live-member historical backfill is not yet acceptable as a release-gate operation and must remain outside the fast harness until incremental or bounded ingestion is implemented.
 
-Recommendation: go
+Historical bounded-spike recommendation: go
+
+Recommendation: not-ready

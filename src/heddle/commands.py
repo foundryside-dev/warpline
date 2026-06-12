@@ -22,14 +22,45 @@ def _rev_range_commits(repo: Path, rev_range: str | None) -> set[str] | None:
     return {line for line in proc.stdout.splitlines() if line}
 
 
+def _entity_key_id(event: dict[str, object]) -> int | None:
+    value = event.get("entity_key_id")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
 def changed(repo: Path, rev_range: str | None = None) -> dict[str, Any]:
     commit_shas = _rev_range_commits(repo, rev_range)
     with HeddleStore.open(default_store_path(repo)) as store:
+        changed_events = store.list_change_events(repo, commit_shas=commit_shas)
+        changed_entity_key_ids = sorted(
+            {
+                key_id
+                for event in changed_events
+                if (key_id := _entity_key_id(event)) is not None
+            }
+        )
         return {
             "heddle_schema_version": store.schema_version(),
             "query": "changed",
             "rev_range": rev_range,
-            "changed": store.list_change_events(repo, commit_shas=commit_shas),
+            "changed": changed_events,
+            "changed_entity_key_ids": changed_entity_key_ids,
+            "next_actions": {
+                "reverify": {
+                    "tool": "reverify",
+                    "arguments": {
+                        "repo": str(repo),
+                        "changed_entity_key_ids": changed_entity_key_ids,
+                        "depth": 2,
+                    },
+                }
+            },
             "enrichment": {"sei": "absent", "edges": "absent"},
         }
 

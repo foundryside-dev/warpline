@@ -1,6 +1,7 @@
 # Heddle Federation Contracts
 
-Status: pre-admission draft, Heddle-owned, productization gated by `spike/REPORT.md`.
+Status: pre-admission draft, Heddle-owned, blocked by the `not-ready` verdict in
+`spike/REPORT.md`.
 These fixtures are non-normative until owner admission and glossary clearance.
 
 Heddle exposes read-only, local-first CLI and MCP surfaces over its temporal store.

@@ -7,15 +7,23 @@ Owner sign-off: request to take ownership on 2026-06-13; admission still reserve
 Supersedes: none
 Related: `roadmap.md` (Now), `metrics.md` (north-star), `spike/REPORT.md`
 
+## 2026-06-13 Readiness Addendum
+
+A later live review found that Heddle is a disciplined solo-mode prototype but
+not product-ready or member-grade. This does not reverse the ownership posture;
+it narrows it. Heddle remains a first-class product bet, but productization and
+admission recommendations are blocked until production SEI resolution,
+production edge snapshot capture, MCP usability, C-9/C-13 runtime conformance,
+and federation uplift are proven by executable dogfood evidence.
+
 ## Context
 
-Heddle now has a passing release-candidate gate, a `go` spike recommendation,
-core CLI/MCP surfaces, dated snapshot state, reverify worklists, and
-Heddle-owned draft federation contracts. The remaining risk is no longer "can a
-prototype exist"; it is whether Heddle is treated as a coherent product whose
-MCP surface is at least as good as existing tools in solo mode, better with
-federation members, and whose federation posture does not blur sibling
-authority boundaries.
+Heddle has a useful prototype scaffold, core CLI/MCP surfaces, honest
+`NO_SNAPSHOT` behavior, reverify worklists, and Heddle-owned draft federation
+contracts. The remaining risk is no longer "can a prototype exist"; it is
+whether Heddle is treated as a coherent product whose MCP surface is at least as
+good as existing tools in solo mode, better with federation members, and whose
+federation posture does not blur sibling authority boundaries.
 
 ## Options considered
 

@@ -38,6 +38,10 @@ def test_changed_response_fixture_carries_enrichment_state() -> None:
     assert isinstance(enrichment, dict)
     assert enrichment["sei"] in {"present", "absent"}
     assert enrichment["edges"] in {"present", "absent", "stale"}
+    assert data["changed_entity_key_ids"] == [1]
+    next_actions = data["next_actions"]
+    assert isinstance(next_actions, dict)
+    assert next_actions["reverify"]["arguments"]["changed_entity_key_ids"] == [1]
 
 
 def test_reverify_response_fixture_carries_honesty_fields() -> None:

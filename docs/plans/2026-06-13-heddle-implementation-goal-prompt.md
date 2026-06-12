@@ -1,12 +1,12 @@
 # Heddle Implementation Goal Prompt
 
 ```text
-Implement Heddle to completion from /home/john/heddle/docs/plans/2026-06-12-heddle-delivery.md.
+Implement Heddle to completion from /home/john/heddle/docs/plans/2026-06-13-heddle-1-0-readiness.md.
 
 Treat the plan as the starting artifact, not as unquestionable truth. First orient in /home/john/heddle and the relevant federation repos: /home/john/weft, /home/john/loomweave, /home/john/filigree, /home/john/wardline, /home/john/legis, and /home/john/charter. Verify current source reality before coding against any sibling interface.
 
 Primary objective:
-Deliver Heddle as a local-first, MCP-facing temporal change-impact product that can integrate cleanly into the Weft federation. Heddle must answer what changed, who/when, what downstream entities may be affected, and what should be reverified, while preserving federation authority boundaries.
+Deliver Heddle as a local-first, MCP-facing temporal change-impact product that can integrate cleanly into the Weft federation. Heddle must answer what changed, who/when, what downstream entities may be affected, and what should be reverified, while preserving federation authority boundaries. The current product verdict is not-ready; do not promote Heddle until executable evidence proves solo parity and federation uplift.
 
 Priorities:
 1. MCP is a first-class product surface, not a wrapper. Every core capability must be available through MCP with structured, agent-friendly responses.
@@ -63,7 +63,7 @@ Implementation expectations:
 Completion criteria:
 - All planned tasks are implemented or explicitly superseded by a documented better approach.
 - Unit, integration, spike, MCP, lint, type, release-candidate, and member-boundary gates pass or skip only with explicit justified reasons.
-- spike/REPORT.md and measurement evidence exist and support the productization decision.
+- spike/REPORT.md, dogfood results, and measurement evidence exist and support the productization decision.
 - The MCP interface has been reviewed as a primary product interface and refactored if awkward.
 - Federation integration artifacts are prepared without unauthorized sibling repo changes.
 - Requirement traceability is current and executable.

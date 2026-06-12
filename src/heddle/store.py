@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import sqlite3
 from pathlib import Path
 from types import TracebackType
@@ -83,14 +82,8 @@ CREATE TABLE IF NOT EXISTS health_log (
 
 def default_store_path(repo: Path, base_dir: Path | None = None) -> Path:
     root = repo.resolve()
-    state_root = (
-        Path(os.environ["XDG_STATE_HOME"])
-        if "XDG_STATE_HOME" in os.environ
-        else Path.home() / ".local/state"
-    )
-    state = base_dir or state_root / "heddle"
-    digest = hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:16]
-    return state / f"heddle-{digest}.db"
+    state = base_dir or root / ".weft" / "heddle"
+    return state / "heddle.db"
 
 
 class HeddleStore:
@@ -252,7 +245,7 @@ class HeddleStore:
         rows = self.conn.execute(
             f"""
             SELECT ce.commit_sha, ce.path, ce.change_kind, ce.actor, ce.changed_at,
-                   ek.locator, ek.sei
+                   ek.id AS entity_key_id, ek.locator, ek.sei
               FROM change_events ce
               JOIN entity_keys ek ON ek.id = ce.entity_key_id
              WHERE ce.repo_id = ?
@@ -268,7 +261,7 @@ class HeddleStore:
         rows = self.conn.execute(
             """
             SELECT ce.commit_sha, ce.path, ce.change_kind, ce.actor, ce.changed_at,
-                   ek.locator, ek.sei
+                   ek.id AS entity_key_id, ek.locator, ek.sei
               FROM change_events ce
               JOIN entity_keys ek ON ek.id = ce.entity_key_id
              WHERE ce.repo_id = ?

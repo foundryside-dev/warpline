@@ -31,3 +31,17 @@ def test_productization_gate_blocks_no_go(tmp_path: Path) -> None:
     decision = read_productization_decision(report)
     assert decision.allowed is False
     assert decision.recommendation == "no-go"
+
+
+def test_productization_gate_blocks_not_ready_verdict_even_with_go(
+    tmp_path: Path,
+) -> None:
+    report = tmp_path / "REPORT.md"
+    report.write_text(
+        "Readiness verdict: not-ready\n\nRecommendation: go\n",
+        encoding="utf-8",
+    )
+    decision = read_productization_decision(report)
+    assert decision.allowed is False
+    assert decision.recommendation == "not-ready"
+    assert decision.reason == "readiness verdict is not-ready"
