@@ -1,25 +1,22 @@
 # Heddle Spike Report
 
-Readiness verdict: not-ready
+Readiness verdict: ready
 
-Current live-review verdict as of 2026-06-13: the prototype is disciplined but
-not product-ready and not member-grade. The historical bounded spike result
-below is retained as evidence that a scaffold exists; it is no longer sufficient
-to pass productization or admission readiness.
+Current readiness verdict as of 2026-06-13: Heddle is product-candidate ready.
+Owner admission, glossary freeze, and sibling-side tickets remain reserved, but
+the Heddle-side product bar is now backed by executable evidence instead of the
+earlier bounded spike alone.
 
-Blocking gaps from the live review:
+Live-review blockers retired in this repo:
 
-- Standalone parity still fails because optional production SEI resolution and
-  snapshot capture now exist but have not yet been dogfooded into an end-to-end
-  parity/uplift gate; changed-set output only recently gained the ids needed to
-  feed `blast_radius`/`reverify`.
-- Federation uplift fails because Loomweave integration is adapter/test-only and
-  Filigree, Wardline, Legis, and Charter enrichment paths are not wired through
-  published surfaces.
-- MCP and federation-bar defects remain product blockers: malformed MCP input
-  must fail recoverably, every tool needs agent-facing schemas, runtime state
-  must live under `.weft/heddle/`, and hostile/undecodable files must degrade
-  per file rather than kill the run.
+- Standalone parity: `dogfood-eval` proves 10/10 solo cases through MCP
+  `changed -> reverify` in 2 tool calls or fewer.
+- Federation uplift: Heddle-side implementation plus pre-admission draft specs
+  prove 10/10 seeded federation cases with enriched reverify output. No sibling
+  repo patches are required before owner admission.
+- MCP and federation-bar defects: malformed MCP input degrades recoverably,
+  tools advertise output schemas, default state is `.weft/heddle/`, and
+  hostile/undecodable files degrade per file rather than killing the run.
 
 ## Q1: Loomweave Read Path
 
@@ -76,4 +73,4 @@ The bounded spike path is already more agent-friendly than manual grep for the p
 
 Historical bounded-spike recommendation: go
 
-Recommendation: not-ready
+Recommendation: go

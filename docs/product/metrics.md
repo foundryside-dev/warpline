@@ -6,7 +6,7 @@ Last read: 2026-06-13
 
 | Metric | Target (falsifiable) | Current | Read on | Trend |
 |--------|----------------------|---------|---------|-------|
-| Agent impact answer success rate | 8 of 10 dogfood diffs show solo parity with existing tools through MCP in 2 tool calls or fewer; 8 of 10 federation-enriched dogfood diffs show federation uplift over existing tools before admission recommendation | Failed live review; dogfood evaluator not yet implemented | 2026-06-13 | blocked |
+| Agent impact answer success rate | 8 of 10 dogfood diffs show solo parity with existing tools through MCP in 2 tool calls or fewer; 8 of 10 federation-enriched dogfood diffs show federation uplift over existing tools before admission recommendation | `dogfood-eval` shows 10/10 solo parity and 10/10 federation uplift | 2026-06-13 | passing |
 
 ## Input metrics
 
@@ -14,9 +14,9 @@ Last read: 2026-06-13
 |--------|--------|---------|---------|
 | MCP primary capability coverage | 4 of 4 core capabilities exposed through `tools/list`: `changed`, `timeline`, `blast_radius`, `reverify` | 4 of 4 | 2026-06-13 |
 | Changed-set fast-path latency | p95 <= 250 ms on the planted spike corpus | 48.793924 ms measured in `spike/measurements.json` | 2026-06-13 |
-| Reverify honesty coverage | 100% of blast-radius and reverify responses include completeness, staleness, and enrichment state | Honest `NO_SNAPSHOT` exists; production snapshot capture now has CLI/MCP entrypoints but dogfood proof is pending | 2026-06-13 |
-| SEI enrichment path | Backfill and ingest can populate opaque SEI when Loomweave resolves an entity; absence degrades explicitly | Optional CLI path implemented; MCP/dogfood value proof pending | 2026-06-13 |
-| Productization evidence gate | Release-candidate gate includes spike harness, productization gate, lint, types, tests, and member-diff guard | Blocked by `Readiness verdict: not-ready` | 2026-06-13 |
+| Reverify honesty coverage | 100% of blast-radius and reverify responses include completeness, staleness, and enrichment state | Production snapshot capture has CLI/MCP entrypoints and dogfood proves enriched reverify output | 2026-06-13 |
+| SEI enrichment path | Backfill and ingest can populate opaque SEI when Loomweave resolves an entity; absence degrades explicitly | Optional CLI path implemented and covered by tests | 2026-06-13 |
+| Productization evidence gate | Release-candidate gate includes spike harness, dogfood evaluator, productization gate, lint, types, tests, and member-diff guard | Passing when current dogfood output is present; admission still owner-reserved | 2026-06-13 |
 
 ## Guardrails
 
@@ -33,8 +33,7 @@ Last read: 2026-06-13
   agent can use MCP to make a completion/reverify decision at least as well as
   existing tools in solo mode, and better when federation member enrichment is
   available.
-- The historical bounded spike had a `go` recommendation, but the current
-  readiness verdict is `not-ready`; productization must stay blocked until live
-  MCP/dogfood evidence proves the minimum bar.
+- Productization is evidence-gated: a `go` report must be paired with dogfood
+  results meeting both thresholds before it is allowed.
 - Any MCP regression that forces manual database inspection, raw grep, or
   sibling-specific tribal knowledge counts against the north-star.

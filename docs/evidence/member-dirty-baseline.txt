@@ -15,13 +15,6 @@
  M www/styles.css
 ## /home/john/legis
 ## /home/john/loomweave
- M crates/loomweave-cli/src/cli.rs
- M crates/loomweave-cli/src/config.rs
- M crates/loomweave-cli/src/serve.rs
- M crates/loomweave-core/src/llm_provider.rs
- M crates/loomweave-core/src/store.rs
- M crates/loomweave-federation/src/config.rs
- M crates/loomweave-mcp/src/lib.rs
 ## /home/john/charter
 ?? src/charter/__pycache__/
 ?? tests/__pycache__/

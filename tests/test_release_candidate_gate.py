@@ -14,8 +14,10 @@ def test_release_candidate_script_runs_required_gates() -> None:
         "pytest tests",
         "check_no_member_diffs.sh",
         "run_spike.sh",
+        "heddle dogfood-eval",
     ]
     for item in required:
         assert item in text
     assert text.index("run_spike.sh") < text.index("heddle productization-gate")
+    assert text.index("heddle dogfood-eval") < text.index("heddle productization-gate")
     assert text.count("git diff --quiet") >= 2

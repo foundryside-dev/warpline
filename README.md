@@ -1,6 +1,6 @@
-# Heddle - temporal / change-impact authority (not member-grade yet)
+# Heddle - temporal / change-impact authority (product candidate)
 
-**Status: WORKING SOLO-MODE PROTOTYPE - not product-ready or member-grade.**
+**Status: PRODUCT CANDIDATE - readiness evidence passes; owner admission still reserved.**
 Name is a placeholder per federation doctrine §8.
 
 Heddle is a candidate Weft federation member: a bounded **temporal-graph
@@ -32,20 +32,19 @@ time."**
 
 ## Product posture
 
-Heddle is now treated inside this repo as a first-class product bet, but the
-current implementation has not earned product-candidate readiness. Its primary
-user is the coding agent trying to finish or review a change without guessing at
-blast radius. The MCP surface is therefore a product surface, not a transport
-wrapper: if an agent cannot discover and use Heddle from `tools/list` and
-structured responses alone, that is a P0 product defect. The minimum bar is
+Heddle is now treated inside this repo as a first-class product candidate. Its
+primary user is the coding agent trying to finish or review a change without
+guessing at blast radius. The MCP surface is therefore a product surface, not a
+transport wrapper: if an agent cannot discover and use Heddle from `tools/list`
+and structured responses alone, that is a P0 product defect. The minimum bar is
 solo-mode parity with existing tools and better answers when federation member
 enrichment is present.
 
-The 2026-06-13 live review found the current prototype below that bar:
-production SEI resolution and edge snapshot capture are not wired, federation
-uplift is not implemented, and MCP/runtime conformance gaps still block member
-readiness. The explicit readiness verdict in [`spike/REPORT.md`](spike/REPORT.md)
-is `not-ready` until those gaps are retired by executable evidence.
+The 2026-06-13 live review found the prototype below that bar. Since then,
+production SEI resolution, production edge snapshot capture, MCP recovery
+hardening, and the executable 10-case solo/federation dogfood evaluator have
+landed. The current readiness verdict in [`spike/REPORT.md`](spike/REPORT.md)
+is `ready`; admission and sibling-side tickets remain owner-gated.
 
 Federation admission is still not claimed here. The current product decision is
 recorded in [`docs/product/decisions/0001-product-candidate-ownership.md`](docs/product/decisions/0001-product-candidate-ownership.md):

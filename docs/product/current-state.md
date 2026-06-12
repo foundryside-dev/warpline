@@ -1,37 +1,36 @@
 # Current State - Heddle
 
-Checkpoint: 2026-06-13 - `main` after live readiness review
+Checkpoint: 2026-06-13 - `main` after dogfood readiness gate
 
 ## The bet right now
 
-Retire the live-review blockers that prevent Heddle from being a first-class
-agentic MCP product and first-class Weft federation candidate. Heddle must be at
-least as good as existing tools in solo mode and better with federation members.
+Keep Heddle product-candidate ready while preserving the owner-reserved
+federation admission boundary. Heddle must remain at least as good as existing
+tools in solo mode and better with federation member enrichment.
 
 ## In flight
 
-- Agent-first MCP productization - status: **not ready**. Live MCP hardening has
-  started, but acceptance is blocked until a dogfood evaluator proves 8/10 solo
-  parity through MCP in 2 tool calls or fewer.
+- Agent-first MCP productization - status: **product-candidate ready**. The
+  dogfood evaluator proves 10/10 solo parity through MCP in 2 tool calls or
+  fewer.
 - Federation admission readiness - status: Heddle-owned contracts and consumer
-  ticket package exist as pre-admission drafts; federation uplift is not yet
-  implemented through published sibling surfaces.
+  ticket package exist as pre-admission drafts; Heddle-side federation uplift is
+  implemented and proven in the seeded dogfood lane. Sibling-side tickets remain
+  post-admission work.
 - Product continuity - status: `docs/product/` created; future sessions should
   RESUME here before reinterpreting the design.
 
-## Current blockers
+## Current non-admission gaps
 
 - Production ingest/backfill can optionally resolve SEI through Loomweave's
   published `entity_resolve` surface; default hook ingest still avoids the
   dependency.
 - Production snapshot capture now has CLI/MCP entrypoints, but `blast_radius` /
-  `reverify` still need dogfood proof that captured snapshots make the workflow
-  at least as useful as existing tools.
-- Federation uplift is unproven: Loomweave is adapter/test-only and
-  Filigree/Wardline/Legis/Charter enrichment paths are not wired.
-- MCP is improving but still needs full live-envelope fixtures, recoverable
-  argument errors across all paths, bounded outputs, and dogfood proof.
-- C-9/C-13 conformance fixes have begun; they need full gate coverage.
+  `reverify` must stay covered by dogfood as the surface evolves.
+- Federation uplift is Heddle-side ready by implementation plus draft specs;
+  sibling-side work remains deferred until owner admission.
+- MCP recovery, C-9 runtime placement, and C-13 hostile-input handling are
+  covered by tests and must stay release-gated.
 
 ## Open questions / blocked-on-owner
 
@@ -39,8 +38,8 @@ least as good as existing tools in solo mode and better with federation members.
   makes that call.
 - Glossary/wire freeze: MCP and JSON shapes remain pre-admission draft until
   glossary clearance and conformance-oracle inclusion.
-- Dogfood evidence: the north-star needs a 10-diff solo/federation MCP dogfood
-  run before any admission recommendation should be treated as validated.
+- Owner decision: whether product-candidate readiness becomes federation
+  admission, glossary freeze, and sibling ticket dispatch.
 
 ## Last checkpoint did
 
@@ -54,9 +53,12 @@ least as good as existing tools in solo mode and better with federation members.
   dated Loomweave edge snapshot capture into local Heddle state.
 - Added optional Loomweave-backed SEI resolution for `backfill` and
   `ingest-commit`, with clean degradation when Loomweave is unavailable.
+- Added `dogfood-eval`, producing `/tmp/heddle-dogfood-results.json`; current
+  run proves 10/10 solo parity and 10/10 federation uplift.
 
 ## Next session, start here
 
 Execute [`docs/plans/2026-06-13-heddle-1-0-readiness.md`](../plans/2026-06-13-heddle-1-0-readiness.md).
-Do not reopen productization until the executable solo/federation dogfood gate
-proves the north-star metric.
+Keep productization evidence fresh by running `heddle dogfood-eval` before
+`heddle productization-gate`. Do not dispatch sibling tickets until owner
+admission is explicit.

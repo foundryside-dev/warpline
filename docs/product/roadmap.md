@@ -8,13 +8,11 @@ Do not compute WSJF here; hand the committed bet over for sequencing.
 
 ## Now (committed, in-flight)
 
-- **Agent-first MCP readiness recovery** - make MCP the primary Heddle
-  experience, not a wrapper over CLI internals, and retire the live-review
-  blockers before reopening productization. Metric: Agent impact answer success
-  rate. Decision: PDR-0001. Spec: PRD-0001.
-- **Federation uplift proof** - keep solo mode useful while adding real
-  published-surface enrichment paths that make Heddle better with federation
-  members. Metric: 8 of 10 federation dogfood diffs show uplift.
+- **Owner-gated federation admission** - product-candidate readiness evidence is
+  in place; admission, glossary freeze, and sibling ticket dispatch remain the
+  owner's call.
+- **Evidence freshness** - keep dogfood, productization, lint/type/test, and
+  member-diff gates aligned as Heddle evolves.
 
 ## Next (shaped, decreasing certainty)
 

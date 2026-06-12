@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from heddle import __version__, commands
+from heddle.dogfood import DEFAULT_DOGFOOD_RESULTS, run_dogfood_evaluator
 from heddle.git import backfill, ingest_commit
 from heddle.install import install_hook
 from heddle.loomweave import LoomweaveMcpClient, LoomweaveProbe, ToolClient
@@ -91,8 +92,18 @@ def build_parser() -> argparse.ArgumentParser:
     capture_snapshot_parser.add_argument("--loomweave-command", default="loomweave")
     capture_snapshot_parser.add_argument("--json", action="store_true")
 
+    dogfood_parser = sub.add_parser("dogfood-eval")
+    dogfood_parser.add_argument("--output", type=Path, default=DEFAULT_DOGFOOD_RESULTS)
+    dogfood_parser.add_argument("--work-dir", type=Path)
+    dogfood_parser.add_argument("--json", action="store_true")
+
     productization_parser = sub.add_parser("productization-gate")
     productization_parser.add_argument("--report", default="spike/REPORT.md")
+    productization_parser.add_argument(
+        "--dogfood-results",
+        type=Path,
+        default=DEFAULT_DOGFOOD_RESULTS,
+    )
 
     return parser
 
@@ -160,8 +171,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
         return 0
+    if args.command == "dogfood-eval":
+        payload = run_dogfood_evaluator(output_path=args.output, work_dir=args.work_dir)
+        print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
+        return 0 if payload["ready"] else 2
     if args.command == "productization-gate":
-        decision = read_productization_decision(Path(args.report))
+        decision = read_productization_decision(
+            Path(args.report),
+            dogfood_results_path=args.dogfood_results,
+        )
         payload = {
             "allowed": decision.allowed,
             "recommendation": decision.recommendation,
