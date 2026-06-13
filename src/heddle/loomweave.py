@@ -109,7 +109,12 @@ class LoomweaveMcpClient:
 
 
 def resolve_sei_for_locator(client: ToolClient, locator: str) -> str | None:
-    candidates = loomweave_entity_id_candidates(locator)
+    # HX1: the REAL loomweave entity_resolve resolves BARE dotted package
+    # qualnames (e.g. "heddle.store.HeddleStore.timeline"), not the
+    # "python:function:..." entity-id form and not the filesystem path. We send
+    # bare candidates (src-layout stripped) so resolution works against the live
+    # member, not only a FakeClient.
+    candidates = loomweave_resolve_qualnames(locator)
     try:
         payload = client.call_tool("entity_resolve", {"qualnames": candidates})
     except Exception:
@@ -152,21 +157,79 @@ def _sei_from_resolve_results(payload: dict[str, object], locator: str) -> str |
     return None
 
 
-def loomweave_entity_id_candidates(locator: str) -> list[str]:
-    """Return likely Loomweave ids for a local Heddle locator."""
+_SOURCE_ROOTS = ("src", "lib")
 
-    candidates: list[str] = []
+
+def _module_paths(file_path: str) -> list[str]:
+    """Dotted import-module candidates for a .py file path.
+
+    Loomweave keys on the import path (``heddle.store``), not the filesystem
+    path (``src/heddle/store.py``). We return the src-layout-stripped form first
+    and the verbatim form second so both src-layout and flat-layout repos
+    resolve with a single round trip.
+    """
+
+    if not file_path.endswith(".py"):
+        return []
+    parts = file_path[:-3].split("/")
+    if parts and parts[-1] == "__init__":
+        parts = parts[:-1]
+    stripped = parts[1:] if parts and parts[0] in _SOURCE_ROOTS else parts
+    forms: list[str] = []
+    for candidate in (stripped, parts):
+        dotted = ".".join(p for p in candidate if p)
+        if dotted and dotted not in forms:
+            forms.append(dotted)
+    return forms
+
+
+def _split_entity_locator(locator: str) -> tuple[str, str, str] | None:
+    """(kind_prefix, file_path, qualname) for a python entity locator, else None."""
+
     if locator.startswith(("python:function:", "python:class:")) and "::" in locator:
         namespace, kind, body = locator.split(":", 2)
-        kind_prefix = f"{namespace}:{kind}"
         path, qualname = body.split("::", 1)
-        if path.endswith(".py"):
-            module = path[:-3].replace("/", ".")
+        return f"{namespace}:{kind}", path, qualname
+    return None
+
+
+def loomweave_resolve_qualnames(locator: str) -> list[str]:
+    """Bare dotted qualnames for loomweave ``entity_resolve`` (HX1).
+
+    entity_resolve resolves unprefixed import qualnames, so we strip the
+    ``python:{kind}:`` prefix and the filesystem path entirely.
+    """
+
+    candidates: list[str] = []
+    split = _split_entity_locator(locator)
+    if split is not None:
+        _, path, qualname = split
+        for module in _module_paths(path):
+            candidates.append(f"{module}.{qualname}")
+    elif locator.startswith("file:") and locator.endswith(".py"):
+        candidates.extend(_module_paths(locator.removeprefix("file:")))
+    if locator not in candidates:
+        candidates.append(locator)
+    return candidates
+
+
+def loomweave_entity_id_candidates(locator: str) -> list[str]:
+    """Prefixed loomweave entity ids for a local Heddle locator.
+
+    Used to query ``entity_neighborhood_get`` and to alias loomweave ids back to
+    heddle entity keys. Returns the ``python:{kind}:<dotted-id>`` form
+    (src-layout stripped first) and the verbatim locator as a fallback.
+    """
+
+    candidates: list[str] = []
+    split = _split_entity_locator(locator)
+    if split is not None:
+        kind_prefix, path, qualname = split
+        for module in _module_paths(path):
             candidates.append(f"{kind_prefix}:{module}.{qualname}")
     elif locator.startswith("file:") and locator.endswith(".py"):
-        path = locator.removeprefix("file:")
-        module = path[:-3].replace("/", ".")
-        candidates.append(f"python:module:{module}")
+        for module in _module_paths(locator.removeprefix("file:")):
+            candidates.append(f"python:module:{module}")
     candidates.append(locator)
     deduped: list[str] = []
     for candidate in candidates:

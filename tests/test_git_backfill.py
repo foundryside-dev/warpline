@@ -110,8 +110,8 @@ def test_backfill_optionally_resolves_sei(tmp_path: Path) -> None:
     assert report["commits"] == 1
     assert report["sei"] == {"resolved": 1, "absent": 0}
     assert events[0]["locator"] == "python:function:app.py::f"
-    assert events[0]["sei"] == "loomweave:eid:python:function:app.f"
-    assert client.calls == ["python:function:app.f"]
+    assert events[0]["sei"] == "loomweave:eid:app.f"
+    assert client.calls == ["app.f"]
 
 
 def test_ingest_commit_optionally_resolves_sei(tmp_path: Path) -> None:
@@ -132,5 +132,5 @@ def test_ingest_commit_optionally_resolves_sei(tmp_path: Path) -> None:
     assert report["changes"] == 1
     assert report["sei"] == {"resolved": 1, "absent": 0}
     assert events[0]["locator"] == "python:function:app.py::f"
-    assert events[0]["sei"] == "loomweave:eid:python:function:app.f"
-    assert client.calls == ["python:function:app.f"]
+    assert events[0]["sei"] == "loomweave:eid:app.f"
+    assert client.calls == ["app.f"]

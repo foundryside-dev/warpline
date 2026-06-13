@@ -4,21 +4,29 @@ from heddle.reverify import render_reverify_worklist
 
 
 def test_reverify_worklist_is_machine_first() -> None:
-    blast = {
-        "changed": [{"locator": "python:function:a"}],
-        "affected": [
+    items, work_seen, candidates = render_reverify_worklist(
+        changed=[{"entity": {"locator": "python:function:a", "sei": None}}],
+        affected=[
             {
-                "locator": "python:function:b",
+                "entity": {"locator": "python:function:b", "sei": None},
                 "depth": 1,
-                "via_edges": [{"from": "a", "to": "b", "kind": "calls"}],
+                "via_edges": [{"from": "1", "to": "2", "kind": "calls", "confidence": "resolved"}],
             }
         ],
-        "staleness": {"snapshot_commit": "c1", "commits_behind": None},
-        "completeness": "FULL",
+        completeness="FULL",
+        staleness={"snapshot_commit": "c1", "commits_behind": None},
+    )
+    changed_item = next(item for item in items if item["reason"] == "changed")
+    assert changed_item["entity"]["locator"] == "python:function:a"
+    downstream = next(item for item in items if item["reason"] == "downstream")
+    assert downstream["entity"]["locator"] == "python:function:b"
+    assert downstream["why"][0]["kind"] == "calls"
+    assert downstream["depth"] == 1
+    assert downstream["enrichment"] == {
+        "work": [],
+        "risk": [],
+        "governance": [],
+        "requirements": [],
     }
-    out = render_reverify_worklist(blast)
-    assert out["format"] == "heddle.reverify.v1"
-    assert out["items"][0]["entity"]["locator"] == "python:function:b"
-    assert out["items"][0]["why"][0]["kind"] == "calls"
-    assert out["staleness"] == blast["staleness"]
-    assert out["completeness"] == "FULL"
+    assert work_seen is False
+    assert candidates == []

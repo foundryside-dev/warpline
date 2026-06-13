@@ -39,13 +39,12 @@ def test_spike_harness_does_not_backfill_live_member_repos() -> None:
 
 
 def test_reverify_worklist_carries_honesty_fields() -> None:
-    worklist = render_reverify_worklist(
-        {
-            "changed": [],
-            "affected": [],
-            "staleness": {"snapshot_commit": None, "commits_behind": None},
-            "completeness": "NO_SNAPSHOT",
-        }
+    items, work_seen, candidates = render_reverify_worklist(
+        changed=[],
+        affected=[],
+        staleness={"snapshot_commit": None, "commits_behind": None},
+        completeness="NO_SNAPSHOT",
     )
-    assert worklist["completeness"] == "NO_SNAPSHOT"
-    assert "staleness" in worklist
+    assert items == []
+    assert work_seen is False
+    assert candidates == []

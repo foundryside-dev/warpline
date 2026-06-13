@@ -264,7 +264,8 @@ class HeddleStore:
             params.extend(sorted(commit_shas))
         rows = self.conn.execute(
             f"""
-            SELECT ce.commit_sha, ce.path, ce.change_kind, ce.actor, ce.changed_at,
+            SELECT ce.id AS change_event_id, ce.commit_sha, ce.path, ce.change_kind,
+                   ce.actor, ce.changed_at,
                    ek.id AS entity_key_id, ek.locator, ek.sei
               FROM change_events ce
               JOIN entity_keys ek ON ek.id = ce.entity_key_id
@@ -280,7 +281,8 @@ class HeddleStore:
         repo_id = self._repo_id(repo)
         rows = self.conn.execute(
             """
-            SELECT ce.commit_sha, ce.path, ce.change_kind, ce.actor, ce.changed_at,
+            SELECT ce.id AS change_event_id, ce.commit_sha, ce.path, ce.change_kind,
+                   ce.actor, ce.changed_at,
                    ek.id AS entity_key_id, ek.locator, ek.sei
               FROM change_events ce
               JOIN entity_keys ek ON ek.id = ce.entity_key_id
@@ -291,6 +293,114 @@ class HeddleStore:
             (repo_id, entity, entity),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def entity_keys_by_ids(self, repo: Path, ids: list[int]) -> dict[int, dict[str, object]]:
+        if not ids:
+            return {}
+        repo_id = self._repo_id(repo)
+        placeholders = ",".join("?" for _ in ids)
+        rows = self.conn.execute(
+            f"""
+            SELECT id, locator, sei FROM entity_keys
+             WHERE repo_id = ? AND id IN ({placeholders})
+            """,
+            (repo_id, *ids),
+        ).fetchall()
+        return {int(row["id"]): dict(row) for row in rows}
+
+    def resolve_ref(
+        self, repo: Path, kind: str, value: object
+    ) -> dict[str, object] | None:
+        """Resolve a federation entity ref to a stored entity_key row, or None.
+
+        Siblings key on ``sei`` (preferred) or ``locator``;
+        ``heddle_entity_key_id`` is accepted for compatibility but is NOT a
+        federation key.
+        """
+
+        repo_id = self._repo_id(repo)
+        text = value if isinstance(value, str) else str(value)
+        clause: str
+        param: object
+        if kind == "sei":
+            clause, param = "ek.sei = ?", text
+        elif kind == "locator":
+            clause, param = "ek.locator = ?", text
+        elif kind == "heddle_entity_key_id":
+            if not isinstance(value, (int, str)):
+                return None
+            try:
+                key_id = int(value)
+            except (TypeError, ValueError):
+                return None
+            clause, param = "ek.id = ?", key_id
+        else:  # auto | qualname | path — try sei then locator
+            row = self.conn.execute(
+                """
+                SELECT id, locator, sei FROM entity_keys ek
+                 WHERE repo_id = ? AND (ek.sei = ? OR ek.locator = ?)
+                 ORDER BY (ek.sei = ?) DESC LIMIT 1
+                """,
+                (repo_id, text, text, text),
+            ).fetchone()
+            return dict(row) if row is not None else None
+        row = self.conn.execute(
+            f"SELECT id, locator, sei FROM entity_keys ek WHERE repo_id = ? AND {clause} LIMIT 1",
+            (repo_id, param),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def churn_for_entity(
+        self,
+        repo: Path,
+        entity_key_id: int,
+        commit_shas: set[str] | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> dict[str, object]:
+        """Aggregate change_events for one entity (the GROUP-BY churn read)."""
+
+        repo_id = self._repo_id(repo)
+        clauses = ["repo_id = ?", "entity_key_id = ?"]
+        params: list[object] = [repo_id, entity_key_id]
+        if commit_shas is not None:
+            if not commit_shas:
+                return {"churn_count": 0, "first": None, "last": None, "last_actor": None}
+            clauses.append(f"commit_sha IN ({','.join('?' for _ in commit_shas)})")
+            params.extend(sorted(commit_shas))
+        if since is not None:
+            clauses.append("changed_at >= ?")
+            params.append(since)
+        if until is not None:
+            clauses.append("changed_at <= ?")
+            params.append(until)
+        where = " AND ".join(clauses)
+        row = self.conn.execute(
+            f"""
+            SELECT COUNT(*) AS churn_count,
+                   MIN(changed_at) AS first_changed_at,
+                   MAX(changed_at) AS last_changed_at
+              FROM change_events WHERE {where}
+            """,
+            params,
+        ).fetchone()
+        count = int(row["churn_count"]) if row is not None else 0
+        last_actor = None
+        if count:
+            actor_row = self.conn.execute(
+                f"""
+                SELECT actor FROM change_events WHERE {where}
+                 ORDER BY changed_at DESC, id DESC LIMIT 1
+                """,
+                params,
+            ).fetchone()
+            last_actor = actor_row["actor"] if actor_row is not None else None
+        return {
+            "churn_count": count,
+            "first": row["first_changed_at"] if row is not None else None,
+            "last": row["last_changed_at"] if row is not None else None,
+            "last_actor": last_actor,
+        }
 
     def log_health(self, repo: Path, code: str, message: str) -> None:
         repo_id = self.ensure_repo(repo)

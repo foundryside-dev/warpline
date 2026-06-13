@@ -1,66 +1,223 @@
 {
-  "schema": "heddle.draft.mcp_tool_inventory.v1",
-  "status": "pre-admission-draft",
+  "schema": "heddle.mcp_tool_inventory.v1",
+  "status": "admitted-frozen",
+  "frozen_at": "2026-06-13",
   "tools": [
     {
       "name": "blast_radius",
+      "endorsed_name": "heddle_impact_radius_get",
+      "shim": "blast_radius",
+      "schema": "heddle.impact_radius.v1",
       "mutates": false,
       "read_only": true,
       "writes_local_state": true,
       "idempotent": true,
-      "mutates_paths": [".weft/heddle/"],
-      "federation_dependencies": ["loomweave snapshot optional"],
+      "mutates_paths": [
+        ".weft/heddle/"
+      ],
+      "federation_dependencies": [
+        "loomweave snapshot optional"
+      ],
       "local_only": true,
       "peer_side_effects": [],
-      "authority_boundary": "Traverses Heddle's dated snapshots; does not answer current graph truth."
+      "authority_boundary": "Traverses heddle's dated snapshots; does not answer current graph truth."
     },
     {
       "name": "capture_snapshot",
+      "endorsed_name": "heddle_edge_snapshot_capture",
+      "shim": "capture_snapshot",
+      "schema": "heddle.edge_snapshot.v1",
       "mutates": true,
       "read_only": false,
       "writes_local_state": true,
       "idempotent": true,
-      "mutates_paths": [".weft/heddle/"],
-      "federation_dependencies": ["loomweave"],
+      "mutates_paths": [
+        ".weft/heddle/"
+      ],
+      "federation_dependencies": [
+        "loomweave"
+      ],
       "local_only": true,
       "peer_side_effects": [],
-      "authority_boundary": "Captures dated edge snapshots into Heddle local state; does not mutate sibling repos or claim current graph truth."
+      "authority_boundary": "Captures dated edge snapshots into .weft/heddle only; never mutates sibling repos."
     },
     {
       "name": "changed",
+      "endorsed_name": "heddle_change_list",
+      "shim": "changed",
+      "schema": "heddle.change_list.v1",
       "mutates": false,
       "read_only": true,
       "writes_local_state": true,
       "idempotent": true,
-      "mutates_paths": [".weft/heddle/"],
+      "mutates_paths": [
+        ".weft/heddle/"
+      ],
       "federation_dependencies": [],
       "local_only": true,
       "peer_side_effects": [],
-      "authority_boundary": "Returns temporal change facts from git/Heddle store."
+      "authority_boundary": "Returns temporal change facts from git/heddle store."
     },
     {
-      "name": "reverify",
+      "name": "churn",
+      "endorsed_name": "heddle_entity_churn_count_get",
+      "shim": "churn",
+      "schema": "heddle.entity_churn_count.v1",
       "mutates": false,
       "read_only": true,
       "writes_local_state": true,
       "idempotent": true,
-      "mutates_paths": [".weft/heddle/"],
-      "federation_dependencies": ["loomweave snapshot optional"],
+      "mutates_paths": [
+        ".weft/heddle/"
+      ],
+      "federation_dependencies": [],
+      "local_only": true,
+      "peer_side_effects": [],
+      "authority_boundary": "Aggregates change-event counts; a never-observed entity is churn_count 0, not an error."
+    },
+    {
+      "name": "heddle_change_list",
+      "endorsed_name": "heddle_change_list",
+      "shim": "changed",
+      "schema": "heddle.change_list.v1",
+      "mutates": false,
+      "read_only": true,
+      "writes_local_state": true,
+      "idempotent": true,
+      "mutates_paths": [
+        ".weft/heddle/"
+      ],
+      "federation_dependencies": [],
+      "local_only": true,
+      "peer_side_effects": [],
+      "authority_boundary": "Returns temporal change facts from git/heddle store."
+    },
+    {
+      "name": "heddle_edge_snapshot_capture",
+      "endorsed_name": "heddle_edge_snapshot_capture",
+      "shim": "capture_snapshot",
+      "schema": "heddle.edge_snapshot.v1",
+      "mutates": true,
+      "read_only": false,
+      "writes_local_state": true,
+      "idempotent": true,
+      "mutates_paths": [
+        ".weft/heddle/"
+      ],
+      "federation_dependencies": [
+        "loomweave"
+      ],
+      "local_only": true,
+      "peer_side_effects": [],
+      "authority_boundary": "Captures dated edge snapshots into .weft/heddle only; never mutates sibling repos."
+    },
+    {
+      "name": "heddle_entity_churn_count_get",
+      "endorsed_name": "heddle_entity_churn_count_get",
+      "shim": "churn",
+      "schema": "heddle.entity_churn_count.v1",
+      "mutates": false,
+      "read_only": true,
+      "writes_local_state": true,
+      "idempotent": true,
+      "mutates_paths": [
+        ".weft/heddle/"
+      ],
+      "federation_dependencies": [],
+      "local_only": true,
+      "peer_side_effects": [],
+      "authority_boundary": "Aggregates change-event counts; a never-observed entity is churn_count 0, not an error."
+    },
+    {
+      "name": "heddle_entity_timeline_get",
+      "endorsed_name": "heddle_entity_timeline_get",
+      "shim": "timeline",
+      "schema": "heddle.entity_timeline.v1",
+      "mutates": false,
+      "read_only": true,
+      "writes_local_state": true,
+      "idempotent": true,
+      "mutates_paths": [
+        ".weft/heddle/"
+      ],
+      "federation_dependencies": [],
+      "local_only": true,
+      "peer_side_effects": [],
+      "authority_boundary": "Returns per-entity change timeline; reports sei_resolution only, never lineage."
+    },
+    {
+      "name": "heddle_impact_radius_get",
+      "endorsed_name": "heddle_impact_radius_get",
+      "shim": "blast_radius",
+      "schema": "heddle.impact_radius.v1",
+      "mutates": false,
+      "read_only": true,
+      "writes_local_state": true,
+      "idempotent": true,
+      "mutates_paths": [
+        ".weft/heddle/"
+      ],
+      "federation_dependencies": [
+        "loomweave snapshot optional"
+      ],
+      "local_only": true,
+      "peer_side_effects": [],
+      "authority_boundary": "Traverses heddle's dated snapshots; does not answer current graph truth."
+    },
+    {
+      "name": "heddle_reverify_worklist_get",
+      "endorsed_name": "heddle_reverify_worklist_get",
+      "shim": "reverify",
+      "schema": "heddle.reverify_worklist.v1",
+      "mutates": false,
+      "read_only": true,
+      "writes_local_state": true,
+      "idempotent": true,
+      "mutates_paths": [
+        ".weft/heddle/"
+      ],
+      "federation_dependencies": [
+        "loomweave snapshot optional"
+      ],
+      "local_only": true,
+      "peer_side_effects": [],
+      "authority_boundary": "Returns reverify worklists; does not file work or govern changes."
+    },
+    {
+      "name": "reverify",
+      "endorsed_name": "heddle_reverify_worklist_get",
+      "shim": "reverify",
+      "schema": "heddle.reverify_worklist.v1",
+      "mutates": false,
+      "read_only": true,
+      "writes_local_state": true,
+      "idempotent": true,
+      "mutates_paths": [
+        ".weft/heddle/"
+      ],
+      "federation_dependencies": [
+        "loomweave snapshot optional"
+      ],
       "local_only": true,
       "peer_side_effects": [],
       "authority_boundary": "Returns reverify worklists; does not file work or govern changes."
     },
     {
       "name": "timeline",
+      "endorsed_name": "heddle_entity_timeline_get",
+      "shim": "timeline",
+      "schema": "heddle.entity_timeline.v1",
       "mutates": false,
       "read_only": true,
       "writes_local_state": true,
       "idempotent": true,
-      "mutates_paths": [".weft/heddle/"],
+      "mutates_paths": [
+        ".weft/heddle/"
+      ],
       "federation_dependencies": [],
       "local_only": true,
       "peer_side_effects": [],
-      "authority_boundary": "Returns per-entity change timeline; does not resolve current structure."
+      "authority_boundary": "Returns per-entity change timeline; reports sei_resolution only, never lineage."
     }
   ]
 }

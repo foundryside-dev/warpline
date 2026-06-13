@@ -19,9 +19,12 @@ def test_cli_changed_outputs_json(tmp_path: Path, capsys: pytest.CaptureFixture[
     repo.mkdir()
     assert cli.main(["changed", "--repo", str(repo), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["query"] == "changed"
-    assert "changed" in payload
-    assert "changed_entity_key_ids" in payload
+    assert payload["schema"] == "heddle.change_list.v1"
+    assert payload["query"]["tool"] == "heddle_change_list"
+    assert isinstance(payload["data"]["items"], list)
+    assert "heddle_reverify_worklist_get" in payload["next_actions"]
+    assert payload["meta"]["local_only"] is True
+    assert payload["meta"]["peer_side_effects"] == []
 
 
 def test_cli_timeline_outputs_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -29,8 +32,10 @@ def test_cli_timeline_outputs_json(tmp_path: Path, capsys: pytest.CaptureFixture
     repo.mkdir()
     assert cli.main(["timeline", "--repo", str(repo), "--entity", "file:a.py", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["query"] == "timeline"
-    assert payload["entity"] == "file:a.py"
+    assert payload["schema"] == "heddle.entity_timeline.v1"
+    assert payload["query"]["tool"] == "heddle_entity_timeline_get"
+    assert payload["data"]["entity"]["locator"] == "file:a.py"
+    assert payload["data"]["entity"]["sei_resolution"] == "unknown"
 
 
 def test_cli_capture_snapshot_degrades_without_loomweave(
@@ -63,9 +68,11 @@ def test_cli_capture_snapshot_degrades_without_loomweave(
         == 0
     )
     payload = json.loads(capsys.readouterr().out)
-    assert payload["query"] == "capture_snapshot"
-    assert payload["completeness"] == "SKIPPED"
-    assert payload["source_version"] == "command_unavailable"
+    assert payload["schema"] == "heddle.edge_snapshot.v1"
+    assert payload["query"]["tool"] == "heddle_edge_snapshot_capture"
+    assert payload["data"]["completeness"] == "SKIPPED"
+    assert payload["data"]["source_version"] == "command_unavailable"
+    assert payload["meta"]["peer_side_effects"] == []
 
 
 def test_cli_backfill_with_resolve_sei_degrades_without_loomweave(

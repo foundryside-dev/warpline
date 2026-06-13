@@ -1,41 +1,52 @@
 {
-  "schema": "heddle.draft.reverify.v1",
+  "schema": "heddle.reverify_worklist.v1",
   "ok": true,
+  "query": {
+    "repo": "/abs/path",
+    "tool": "heddle_reverify_worklist_get",
+    "arguments": {"rev_range": "HEAD~1..HEAD", "changed_entity_key_ids": [1], "depth": 2},
+    "filters": {},
+    "sort": {"by": "priority", "order": "asc"},
+    "page": {"limit": 100, "cursor": null}
+  },
   "data": {
-    "repo": "example",
-    "rev_range": "HEAD~1..HEAD",
     "completeness": "NO_SNAPSHOT",
-    "staleness": {
-      "snapshot_commit": null,
-      "commits_behind": null
-    },
-    "worklist": [
+    "staleness": {"snapshot_commit": null, "commits_behind": null},
+    "items": [
       {
-        "entity_key": {
-          "locator": "src/pkg/mod.py::fn",
-          "sei": null
+        "entity": {
+          "locator": "python:function:src/pkg/mod.py::fn",
+          "sei": "loomweave:eid:0123456789abcdef0123456789abcdef"
         },
-        "reason": "changed in rev_range",
+        "priority": "unknown",
+        "reason": "changed",
+        "depth": 0,
+        "why": [],
         "suggested_verification": [
-          {
-            "kind": "test",
-            "command": "run tests touching this entity if known"
-          }
-        ]
+          {"kind": "test", "command": "run tests touching this entity if known"},
+          {"kind": "inspection", "command": "inspect callers and behavior at this boundary"}
+        ],
+        "enrichment": {"work": [], "risk": [], "governance": [], "requirements": []}
       }
     ],
-    "enrichment": {
-      "sei": "absent",
-      "edges": "absent"
-    }
+    "next_actions": {"filigree": []},
+    "page": {"limit": 100, "next_cursor": null, "has_more": false}
   },
   "warnings": [
     "NO_SNAPSHOT: downstream traversal unavailable; changed set only"
   ],
+  "next_actions": {"filigree": []},
+  "enrichment": {
+    "sei": "absent",
+    "edges": "absent",
+    "work": "unavailable",
+    "risk": "unavailable",
+    "governance": "unavailable",
+    "requirements": "unavailable"
+  },
   "meta": {
-    "producer": {
-      "tool": "heddle",
-      "version": "0.1.0"
-    }
+    "producer": {"tool": "heddle", "version": "0.1.0"},
+    "local_only": true,
+    "peer_side_effects": []
   }
 }

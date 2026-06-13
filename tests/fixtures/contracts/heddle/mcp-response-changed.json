@@ -1,47 +1,71 @@
 {
-  "schema": "heddle.draft.changed.v1",
+  "schema": "heddle.change_list.v1",
   "ok": true,
+  "query": {
+    "repo": "/abs/path",
+    "tool": "heddle_change_list",
+    "arguments": {"rev_range": "HEAD~1..HEAD"},
+    "filters": {},
+    "sort": {"by": "changed_at", "order": "asc"},
+    "page": {"limit": 50, "cursor": null}
+  },
   "data": {
-    "repo": "example",
-    "rev_range": "HEAD~1..HEAD",
-    "changed_entity_key_ids": [
-      1
-    ],
-    "changed": [
+    "items": [
       {
-        "entity_key_id": 1,
-        "entity_key": {
-          "locator": "src/pkg/mod.py::fn",
-          "sei": null
+        "change_id": "heddle:change:1",
+        "entity": {
+          "heddle_entity_key_id": 1,
+          "locator": "python:function:src/pkg/mod.py::fn",
+          "sei": "loomweave:eid:0123456789abcdef0123456789abcdef",
+          "path": "src/pkg/mod.py"
         },
         "change_kind": "modified",
         "actor": "agent:codex",
         "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "at": "2026-06-13T00:00:00Z"
+        "changed_at": "2026-06-13T00:00:00Z"
       }
     ],
-    "next_actions": {
-      "reverify": {
-        "tool": "reverify",
-        "arguments": {
-          "repo": "example",
-          "changed_entity_key_ids": [
-            1
-          ],
-          "depth": 2
-        }
-      }
-    },
-    "enrichment": {
-      "sei": "absent",
-      "edges": "absent"
-    }
+    "changed_refs": [
+      {"kind": "sei", "value": "loomweave:eid:0123456789abcdef0123456789abcdef"}
+    ],
+    "page": {"limit": 50, "next_cursor": null, "has_more": false}
   },
   "warnings": [],
-  "meta": {
-    "producer": {
-      "tool": "heddle",
-      "version": "0.1.0"
+  "next_actions": {
+    "heddle_reverify_worklist_get": {
+      "tool": "heddle_reverify_worklist_get",
+      "arguments": {
+        "repo": "/abs/path",
+        "changed_entity_key_ids": [1],
+        "changed_refs": [
+          {"kind": "sei", "value": "loomweave:eid:0123456789abcdef0123456789abcdef"}
+        ],
+        "depth": 2
+      }
+    },
+    "heddle_impact_radius_get": {
+      "tool": "heddle_impact_radius_get",
+      "arguments": {
+        "repo": "/abs/path",
+        "changed_entity_key_ids": [1],
+        "changed_refs": [
+          {"kind": "sei", "value": "loomweave:eid:0123456789abcdef0123456789abcdef"}
+        ],
+        "depth": 2
+      }
     }
+  },
+  "enrichment": {
+    "sei": "present",
+    "edges": "absent",
+    "work": "unavailable",
+    "risk": "unavailable",
+    "governance": "unavailable",
+    "requirements": "unavailable"
+  },
+  "meta": {
+    "producer": {"tool": "heddle", "version": "0.1.0"},
+    "local_only": true,
+    "peer_side_effects": []
   }
 }

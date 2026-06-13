@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from heddle import __version__, commands
+from heddle import __version__, commands, install_support
 from heddle.dogfood import DEFAULT_DOGFOOD_RESULTS, REAL_MEMBER_REPO, run_dogfood_evaluator
 from heddle.git import backfill, ingest_commit
 from heddle.install import install_hook
@@ -12,6 +12,20 @@ from heddle.loomweave import LoomweaveMcpClient, LoomweaveProbe, ToolClient
 from heddle.mcp_smoke import run_mcp_smoke
 from heddle.productization import read_productization_decision
 from heddle.store import HeddleStore, default_store_path
+
+# install/doctor component flags -> component keys
+_INSTALL_FLAGS = {
+    "claude_code": "claude-code",
+    "codex": "codex",
+    "claude_md": "claude_md",
+    "agents_md": "agents_md",
+    "gitignore": "gitignore",
+    "hooks": "hooks",
+    "session_hook": "session-hook",
+    "skills": "skills",
+    "codex_skills": "codex-skills",
+    "config": "config",
+}
 
 
 def _optional_sei_client(
@@ -43,16 +57,50 @@ def build_parser() -> argparse.ArgumentParser:
     init = sub.add_parser("init")
     init.add_argument("--repo", type=Path, default=Path("."))
 
+    install_parser = sub.add_parser(
+        "install", help="Install heddle MCP bindings, hooks, skills, and config."
+    )
+    install_parser.add_argument("--repo", type=Path, default=Path("."))
+    install_parser.add_argument("--claude-code", action="store_true", help="Claude Code MCP only")
+    install_parser.add_argument("--codex", action="store_true", help="Codex MCP only")
+    install_parser.add_argument("--claude-md", action="store_true", help="CLAUDE.md block only")
+    install_parser.add_argument("--agents-md", action="store_true", help="AGENTS.md block only")
+    install_parser.add_argument("--gitignore", action="store_true", help="gitignore only")
+    install_parser.add_argument("--hooks", action="store_true", help="git post-commit hook only")
+    install_parser.add_argument(
+        "--session-hook", action="store_true", help="SessionStart hook only"
+    )
+    install_parser.add_argument("--skills", action="store_true", help="Claude Code skill only")
+    install_parser.add_argument("--codex-skills", action="store_true", help="Codex skill only")
+    install_parser.add_argument("--config", action="store_true", help=".weft/heddle config only")
+    install_parser.add_argument("--json", action="store_true")
+
+    doctor_parser = sub.add_parser(
+        "doctor", help="Verify the heddle installation; --fix autofixes."
+    )
+    doctor_parser.add_argument("--repo", type=Path, default=Path("."))
+    doctor_parser.add_argument("--fix", action="store_true", help="autofix anything fixable")
+    doctor_parser.add_argument("--json", action="store_true")
+
+    session_parser = sub.add_parser("session-context")
+    session_parser.add_argument("--repo", type=Path, default=Path("."))
+
     backfill_parser = sub.add_parser("backfill")
     backfill_parser.add_argument("--repo", type=Path, default=Path("."))
-    backfill_parser.add_argument("--resolve-sei", action="store_true")
+    # HX1: SEI resolution is ON by default; degrades cleanly when loomweave is
+    # absent. Pass --no-resolve-sei to skip the loomweave probe entirely.
+    backfill_parser.add_argument(
+        "--resolve-sei", action=argparse.BooleanOptionalAction, default=True
+    )
     backfill_parser.add_argument("--loomweave-command", default="loomweave")
     backfill_parser.add_argument("--json", action="store_true")
 
     ingest = sub.add_parser("ingest-commit")
     ingest.add_argument("sha")
     ingest.add_argument("--repo", type=Path, default=Path("."))
-    ingest.add_argument("--resolve-sei", action="store_true")
+    ingest.add_argument(
+        "--resolve-sei", action=argparse.BooleanOptionalAction, default=True
+    )
     ingest.add_argument("--loomweave-command", default="loomweave")
 
     loomweave_probe = sub.add_parser("loomweave-probe")
@@ -69,6 +117,12 @@ def build_parser() -> argparse.ArgumentParser:
     timeline_parser.add_argument("--repo", type=Path, default=Path("."))
     timeline_parser.add_argument("--entity", required=True)
     timeline_parser.add_argument("--json", action="store_true")
+
+    churn_parser = sub.add_parser("churn")
+    churn_parser.add_argument("--repo", type=Path, default=Path("."))
+    churn_parser.add_argument("--sei", action="append", default=[])
+    churn_parser.add_argument("--locator", action="append", default=[])
+    churn_parser.add_argument("--json", action="store_true")
 
     blast_parser = sub.add_parser("blast-radius")
     blast_parser.add_argument("--repo", type=Path, default=Path("."))
@@ -126,6 +180,44 @@ def main(argv: list[str] | None = None) -> int:
         hook = install_hook(args.repo)
         print(str(hook))
         return 0
+    if args.command == "install":
+        selected = {key for attr, key in _INSTALL_FLAGS.items() if getattr(args, attr, False)}
+        install_report = install_support.run_install(args.repo, selected or None)
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "schema": "heddle.install.v1",
+                        "ok": install_report.ok,
+                        "actions": [
+                            {"component": n, "detail": d} for n, d in install_report.actions
+                        ],
+                        "errors": [
+                            {"component": n, "detail": d} for n, d in install_report.errors
+                        ],
+                    },
+                    sort_keys=True,
+                )
+            )
+        else:
+            for name, detail in install_report.actions:
+                print(f"  ✓ {name}: {detail}")
+            for name, detail in install_report.errors:
+                print(f"  !! {name}: {detail}")
+        return 0 if install_report.ok else 1
+    if args.command == "doctor":
+        doctor_report = install_support.run_doctor(args.repo, fix=args.fix)
+        if args.json:
+            print(json.dumps(install_support.doctor_summary(doctor_report), sort_keys=True))
+        else:
+            for result in doctor_report.results:
+                print(f"  {'✓' if result.ok else '!!'} {result.name}: {result.detail}")
+            for name, detail in doctor_report.fixed:
+                print(f"  → fixed {name}: {detail}")
+        return 0 if doctor_report.ok else 1
+    if args.command == "session-context":
+        print(commands.session_context(args.repo))
+        return 0
     if args.command == "backfill":
         sei_client, sei_resolution = _optional_sei_client(
             args.repo,
@@ -156,19 +248,25 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
         return 0
     if args.command == "changed":
-        payload = commands.changed(args.repo, args.rev_range)
+        payload = commands.change_list(args.repo, args.rev_range)
         print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
         return 0
     if args.command == "timeline":
-        payload = commands.timeline(args.repo, args.entity)
+        payload = commands.entity_timeline(args.repo, args.entity)
+        print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
+        return 0
+    if args.command == "churn":
+        refs = [{"kind": "sei", "value": s} for s in args.sei]
+        refs += [{"kind": "locator", "value": loc} for loc in args.locator]
+        payload = commands.entity_churn_count(args.repo, refs)
         print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
         return 0
     if args.command == "blast-radius":
-        payload = commands.blast_radius(args.repo, args.changed_entity_key_id, args.depth)
+        payload = commands.impact_radius(args.repo, args.changed_entity_key_id, args.depth)
         print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
         return 0
     if args.command == "reverify":
-        payload = commands.reverify(args.repo, args.changed_entity_key_id, args.depth)
+        payload = commands.reverify_worklist(args.repo, args.changed_entity_key_id, args.depth)
         print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
         return 0
     if args.command == "capture-snapshot":

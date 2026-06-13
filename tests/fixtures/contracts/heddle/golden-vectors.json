@@ -1,0 +1,43 @@
+{
+  "schema": "heddle.golden_vectors.v1",
+  "producer": "heddle",
+  "oracle": "GS-7 four-member conformance oracle (heddle is the 5th producer)",
+  "frozen_at": "2026-06-13",
+  "executable": "tests/contracts/test_golden_vectors.py",
+  "vectors": [
+    {"id": "GV-LW-1", "seam": "loomweave", "tool": "heddle_change_list",
+     "assert": "2-entity change -> items len 2, each carries locator+sei, changed_refs SEI-keyed, next_actions names heddle_reverify_worklist_get"},
+    {"id": "GV-LW-2", "seam": "loomweave", "tool": "heddle_entity_churn_count_get",
+     "assert": "3 SEIs, one never-observed -> items len 3, observed >=1, unobserved churn_count 0 (not omitted, not error)"},
+    {"id": "GV-LW-3", "seam": "loomweave", "tool": "heddle_edge_snapshot_capture",
+     "assert": "loomweave available full neighborhood -> FULL, edges>0; absent -> SKIPPED, edges 0, enrichment.edges skipped, exit 0"},
+    {"id": "GV-LW-4", "seam": "loomweave", "tool": "heddle_edge_snapshot_capture",
+     "assert": "truncated neighborhood (callers:true) -> DELTA, never FULL"},
+    {"id": "GV-LW-5", "seam": "loomweave", "tool": "heddle_change_list / heddle_edge_snapshot_capture",
+     "assert": "locator resolves -> sei stored, enrichment.sei present; loomweave absent -> sei null, enrichment.sei unavailable"},
+    {"id": "GV-FI-1", "seam": "filigree", "tool": "heddle_reverify_worklist_get",
+     "assert": "filigree present, linked P1 issue -> item priority P1, enrichment.work[0].issue_status populated, next_actions.filigree is a candidate (heddle filed nothing)"},
+    {"id": "GV-FI-2", "seam": "filigree", "tool": "heddle_reverify_worklist_get",
+     "assert": "filigree absent -> enrichment.work [], envelope enrichment.work unavailable, worklist still non-empty"},
+    {"id": "GV-FI-3", "seam": "filigree", "tool": "entity_association_list_by_entity (consumed)",
+     "assert": "SEI X with one bound issue -> work-enrichment shows issue_id; SEI with no binding -> [] (not error)"},
+    {"id": "GV-WL-1", "seam": "wardline", "tool": "heddle_impact_radius_get",
+     "assert": "depth-2 over changed entity, FULL snapshot -> affected non-empty, completeness FULL, staleness.commits_behind 0"},
+    {"id": "GV-WL-2", "seam": "wardline", "tool": "heddle_impact_radius_get",
+     "assert": "no snapshot -> completeness NO_SNAPSHOT, changed only, exit 0"},
+    {"id": "GV-WL-3", "seam": "wardline", "tool": "heddle_reverify_worklist_get",
+     "assert": "wardline absent -> enrichment.risk unavailable, items ordered by depth, never marked clean/allowed"},
+    {"id": "GV-LG-1", "seam": "legis", "tool": "heddle_impact_radius_get",
+     "assert": "depth-2 advisory set -> completeness+staleness present, meta.local_only true, no governance verdict"},
+    {"id": "GV-LG-2", "seam": "legis", "tool": "heddle_entity_timeline_get",
+     "assert": "rename feed {old,new} -> timeline for new locator includes pre-rename events, governance present; absent -> raw-git fallback, governance unavailable"},
+    {"id": "GV-LG-3", "seam": "all", "tool": "all six",
+     "assert": "every response carries meta.local_only true, peer_side_effects []"}
+  ],
+  "reserved_shape_inbound": {
+    "loomweave": "PROVEN+FROZEN (entity_resolve, entity_neighborhood_get) — real consumption (HX1, capture)",
+    "filigree": "EARNED — heddle consumes entity_association_list_by_entity + issue_get for reverify work enrichment (GV-FI-1, GV-FI-3)",
+    "wardline": "NON-BINDING — degrade only (risk: unavailable); heddle does not consume wardline findings (GV-WL-3)",
+    "legis": "NON-BINDING member; the generic locator-rename FEED shape is earned (GV-LG-2), legis stays a future external supplier"
+  }
+}

@@ -33,17 +33,61 @@ def test_tools_list_contains_changed_and_timeline() -> None:
     response = dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
     tools = response["result"]["tools"]
     names = {tool["name"] for tool in tools}
+    # short shims
     assert {"changed", "timeline", "blast_radius", "reverify", "capture_snapshot"} <= names
+    # endorsed names live ALONGSIDE the shims (both must be present, identical schema)
+    assert {
+        "heddle_change_list",
+        "heddle_entity_timeline_get",
+        "heddle_entity_churn_count_get",
+        "heddle_impact_radius_get",
+        "heddle_reverify_worklist_get",
+        "heddle_edge_snapshot_capture",
+    } <= names
     for tool in tools:
         assert "inputSchema" in tool
         output_schema = tool["outputSchema"]
         assert "outputSchema" in tool
-        assert output_schema["required"] == ["schema", "ok", "data", "warnings", "meta"]
+        assert output_schema["required"] == [
+            "schema",
+            "ok",
+            "query",
+            "data",
+            "warnings",
+            "next_actions",
+            "enrichment",
+            "meta",
+        ]
         metadata = tool["metadata"]
         assert metadata["requires_repo"] is True
+        assert metadata["local_only"] is True
+        assert metadata["peer_side_effects"] == []
         assert isinstance(metadata["idempotent"], bool)
         assert isinstance(metadata["writes_local_state"], bool)
         assert ".weft/heddle/" in metadata["mutates_paths"]
+
+
+def test_endorsed_and_shim_return_identical_schema_and_data(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run(["git", "init"], repo)
+
+    def call(name: str) -> dict[str, object]:
+        return tool_payload(
+            dispatch(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {"name": name, "arguments": {"repo": str(repo)}},
+                }
+            )
+        )
+
+    endorsed = call("heddle_change_list")
+    shim = call("changed")
+    assert endorsed["schema"] == shim["schema"] == "heddle.change_list.v1"
+    assert endorsed["data"] == shim["data"]
 
 
 def test_capture_snapshot_metadata_exposes_local_write_and_loomweave_dependency() -> None:
@@ -81,10 +125,12 @@ def test_bad_tool_arguments_are_structured_error() -> None:
     )
     assert response["error"]["code"] == -32602
     assert response["error"]["message"] == "invalid params"
-    assert response["error"]["data"]["reason"] == (
-        "repo is required and must be a non-empty string"
-    )
-    assert response["error"]["data"]["schema"] == "heddle.error.v1"
+    data = response["error"]["data"]
+    assert data["schema"] == "heddle.error.v1"
+    assert data["error_code"] == "missing_required_field"
+    assert data["retryability"] == "retry_with_changes"
+    assert data["rejected_field"] == "repo"
+    assert data["details"]["message"] == "repo is required and must be a non-empty string"
 
 
 def test_initialize_is_spec_complete() -> None:
@@ -195,13 +241,11 @@ def test_changed_response_feeds_reverify_in_two_tool_calls(
         }
     )
     changed = tool_payload(changed_response)
-    assert changed["schema"] == "heddle.draft.changed.v1"
+    assert changed["schema"] == "heddle.change_list.v1"
     assert changed["ok"] is True
-    data = changed["data"]
-    assert isinstance(data, dict)
-    next_actions = data["next_actions"]
+    next_actions = changed["next_actions"]
     assert isinstance(next_actions, dict)
-    reverify_action = next_actions["reverify"]
+    reverify_action = next_actions["heddle_reverify_worklist_get"]
     assert isinstance(reverify_action, dict)
 
     reverify_response = dispatch(
@@ -216,7 +260,7 @@ def test_changed_response_feeds_reverify_in_two_tool_calls(
         }
     )
     reverify = tool_payload(reverify_response)
-    assert reverify["schema"] == "heddle.draft.reverify.v1"
+    assert reverify["schema"] == "heddle.reverify_worklist.v1"
     assert reverify["ok"] is True
     assert reverify["data"]["completeness"] == "NO_SNAPSHOT"
 
@@ -225,6 +269,8 @@ def test_capture_snapshot_mcp_degrades_without_loomweave(tmp_path: Path) -> None
     repo = tmp_path / "repo"
     repo.mkdir()
 
+    # loomweave_command is no longer a public agent input (freeze precondition);
+    # a repo with no loomweave index degrades to SKIPPED honestly.
     response = dispatch(
         {
             "jsonrpc": "2.0",
@@ -232,17 +278,13 @@ def test_capture_snapshot_mcp_degrades_without_loomweave(tmp_path: Path) -> None
             "method": "tools/call",
             "params": {
                 "name": "capture_snapshot",
-                "arguments": {
-                    "repo": str(repo),
-                    "commit": "c1",
-                    "loomweave_command": "/no/such/loomweave",
-                },
+                "arguments": {"repo": str(repo), "commit": "c1"},
             },
         }
     )
     payload = tool_payload(response)
-    assert payload["schema"] == "heddle.draft.capture_snapshot.v1"
+    assert payload["schema"] == "heddle.edge_snapshot.v1"
     assert payload["ok"] is True
-    assert payload["data"]["query"] == "capture_snapshot"
     assert payload["data"]["completeness"] == "SKIPPED"
+    assert payload["meta"]["peer_side_effects"] == []
     assert payload["warnings"] == ["SKIPPED: graph snapshot was skipped; changed set only"]

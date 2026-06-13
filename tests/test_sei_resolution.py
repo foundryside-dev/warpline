@@ -2,20 +2,25 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from heddle.loomweave import loomweave_entity_id_candidates, resolve_sei_for_locator
+from heddle.loomweave import (
+    loomweave_entity_id_candidates,
+    loomweave_resolve_qualnames,
+    resolve_sei_for_locator,
+)
 from heddle.store import HeddleStore
 
 
 class FakeClient:
+    """Mirrors the REAL loomweave entity_resolve: bare dotted qualnames resolve,
+    the prefixed/filesystem forms stay unresolved (HX1)."""
+
     def call_tool(self, name: str, arguments: dict[str, object]) -> dict[str, object]:
         assert name == "entity_resolve"
-        assert arguments == {
-            "qualnames": ["python:function:pkg.mod.fn", "python:function:pkg/mod.py::fn"]
-        }
+        assert arguments == {"qualnames": ["pkg.mod.fn", "python:function:pkg/mod.py::fn"]}
         return {
             "results": [
                 {
-                    "qualname": "python:function:pkg.mod.fn",
+                    "qualname": "pkg.mod.fn",
                     "result_kind": "resolved",
                     "candidates": [
                         {
@@ -23,9 +28,22 @@ class FakeClient:
                             "sei": "loomweave:eid:opaque-value",
                         }
                     ],
-                }
+                },
+                {
+                    "qualname": "python:function:pkg/mod.py::fn",
+                    "result_kind": "unresolved",
+                    "candidates": [],
+                },
             ]
         }
+
+
+def test_resolve_qualnames_are_bare_dotted_for_real_loomweave() -> None:
+    assert loomweave_resolve_qualnames("python:function:src/heddle/store.py::S.fn") == [
+        "heddle.store.S.fn",
+        "src.heddle.store.S.fn",
+        "python:function:src/heddle/store.py::S.fn",
+    ]
 
 
 def test_resolve_sei_for_locator_returns_opaque_value() -> None:

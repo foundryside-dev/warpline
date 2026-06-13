@@ -8,7 +8,7 @@ import heddle
 
 
 def test_package_has_version() -> None:
-    assert heddle.__version__ == "0.1.0"
+    assert heddle.__version__ == "1.0.0"
 
 
 def test_cli_version() -> None:
@@ -19,4 +19,4 @@ def test_cli_version() -> None:
         text=True,
         stdout=subprocess.PIPE,
     )
-    assert completed.stdout.strip() == "heddle 0.1.0"
+    assert completed.stdout.strip() == "heddle 1.0.0"

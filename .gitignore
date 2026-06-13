@@ -3,3 +3,11 @@
 __pycache__/
 *.py[cod]
 .weft/
+
+# Filigree issue tracker
+.filigree/
+.env
+
+# wardline scan artifacts
+findings.jsonl
+findings-rust.jsonl

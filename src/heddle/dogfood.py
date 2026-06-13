@@ -11,7 +11,12 @@ from typing import Any
 
 from heddle import commands
 from heddle.git import backfill
-from heddle.loomweave import loomweave_entity_id_candidates
+from heddle.loomweave import (
+    LoomweaveMcpClient,
+    LoomweaveProbe,
+    loomweave_entity_id_candidates,
+    resolve_sei_for_locator,
+)
 from heddle.mcp import dispatch
 from heddle.snapshot import capture_edge_snapshot
 from heddle.store import HeddleStore, default_store_path
@@ -159,23 +164,18 @@ def _run_case(root: Path, case: DogfoodCase, *, lane: str) -> dict[str, Any]:
     )
     tool_calls += 1
     changed_data = changed_response["data"]
-    next_actions = changed_data.get("next_actions", {})
-    reverify_action = next_actions.get("reverify", {})
-    reverify_args = reverify_action.get("arguments", {})
+    reverify_args = changed_response["next_actions"]["heddle_reverify_worklist_get"]["arguments"]
     reverify_response = _call_tool("reverify", reverify_args)
     tool_calls += 1
     reverify_data = reverify_response["data"]
 
-    changed_paths = {
-        row.get("path")
-        for row in changed_data.get("changed", [])
-        if isinstance(row, dict)
-    }
+    changed_paths = _changed_paths(changed_data)
+    changed_key_ids = reverify_args.get("changed_entity_key_ids", [])
     reverify_items = reverify_data.get("items", [])
     parity = (
         tool_calls <= 2
         and case.target_path in changed_paths
-        and bool(changed_data.get("changed_entity_key_ids"))
+        and bool(changed_key_ids)
         and reverify_data.get("completeness") in {"FULL", "DELTA"}
     )
     uplift = lane == "federation" and parity and reverify_data.get("completeness") == "FULL"
@@ -195,7 +195,7 @@ def _run_case(root: Path, case: DogfoodCase, *, lane: str) -> dict[str, Any]:
             "manual_steps": ["git diff --name-only", "manual dependency inspection"],
         },
         "heddle_answer": {
-            "changed_entity_key_ids": changed_data.get("changed_entity_key_ids", []),
+            "changed_entity_key_ids": changed_key_ids,
             "changed_paths": sorted(changed_paths),
             "reverify_completeness": reverify_data.get("completeness"),
             "reverify_item_count": len(reverify_items) if isinstance(reverify_items, list) else 0,
@@ -205,11 +205,21 @@ def _run_case(root: Path, case: DogfoodCase, *, lane: str) -> dict[str, Any]:
         "failure_reason": failure_reason,
         "manual_escape_required": False,
         "enrichment_state": {
-            "sei": "absent",
+            "sei": changed_response["enrichment"]["sei"],
             "edges": "present" if lane == "federation" else "absent",
             "completeness": reverify_data.get("completeness"),
         },
     }
+
+
+def _changed_paths(change_data: dict[str, Any]) -> set[str]:
+    paths: set[str] = set()
+    for item in change_data.get("items", []):
+        if isinstance(item, dict):
+            entity = item.get("entity")
+            if isinstance(entity, dict) and isinstance(entity.get("path"), str):
+                paths.add(entity["path"])
+    return paths
 
 
 def _run_real_member_case(root: Path, source_repo: Path) -> dict[str, Any]:
@@ -218,6 +228,9 @@ def _run_real_member_case(root: Path, source_repo: Path) -> dict[str, Any]:
     tool_calls = 0
     try:
         _prepare_real_member_repo(source_repo, repo)
+        # Full-history backfill stays fast (no per-locator loomweave spawn); HX1
+        # SEI resolution is demonstrated targeted to the changed set below.
+        sei_client = _real_member_sei_client(repo)
         with HeddleStore.open(default_store_path(repo)) as store:
             backfill(store, repo)
 
@@ -233,22 +246,26 @@ def _run_real_member_case(root: Path, source_repo: Path) -> dict[str, Any]:
         )
         tool_calls += 1
         changed_data = changed_payload["data"]
-        reverify_args = changed_data["next_actions"]["reverify"]["arguments"]
+        reverify_args = changed_payload["next_actions"]["heddle_reverify_worklist_get"]["arguments"]
         reverify_payload = _call_tool_stdio("reverify", reverify_args)
         tool_calls += 1
         reverify_data = reverify_payload["data"]
 
-        heddle_paths = {
-            row.get("path")
-            for row in changed_data.get("changed", [])
-            if isinstance(row, dict) and isinstance(row.get("path"), str)
-        }
+        heddle_paths = _changed_paths(changed_data)
         baseline_paths = set(baseline["changed_paths"])
         reverify_items = reverify_data.get("items", [])
+        changed_key_ids = reverify_args.get("changed_entity_key_ids", [])
+        # HX1: resolve real loomweave SEIs for the changed set (targeted, fast).
+        sei_resolved = 0
+        if sei_client is not None:
+            for item in changed_data.get("items", []):
+                locator = item.get("entity", {}).get("locator") if isinstance(item, dict) else None
+                if isinstance(locator, str) and resolve_sei_for_locator(sei_client, locator):
+                    sei_resolved += 1
         parity = (
             baseline["baseline_executed"] is True
             and baseline_paths == heddle_paths
-            and bool(changed_data.get("changed_entity_key_ids"))
+            and bool(changed_key_ids)
             and reverify_data.get("completeness") in {"FULL", "DELTA"}
         )
         uplift = (
@@ -274,19 +291,20 @@ def _run_real_member_case(root: Path, source_repo: Path) -> dict[str, Any]:
                 "selected_by": selected,
                 "capture_completeness": capture_data.get("completeness"),
                 "capture_edges": capture_data.get("edges"),
-                "changed_entity_key_ids": changed_data.get("changed_entity_key_ids", []),
+                "changed_entity_key_ids": changed_key_ids,
                 "changed_paths": sorted(heddle_paths),
                 "reverify_completeness": reverify_data.get("completeness"),
                 "reverify_item_count": len(reverify_items)
                 if isinstance(reverify_items, list)
                 else 0,
+                "sei_resolved": sei_resolved,
             },
             "parity": parity,
             "uplift": uplift,
             "failure_reason": failure_reason,
             "manual_escape_required": False,
             "enrichment_state": {
-                "sei": "optional",
+                "sei": "present" if sei_resolved else "absent",
                 "edges": "present" if int(capture_data.get("edges", 0)) > 0 else "absent",
                 "completeness": reverify_data.get("completeness"),
             },
@@ -392,44 +410,63 @@ def _select_real_member_rev_range(repo: Path) -> tuple[str, str]:
         if parent.returncode != 0:
             continue
         rev_range = f"{sha}^..{sha}"
-        changed_data = commands.changed(repo, rev_range)
-        changed_entity_key_ids = changed_data.get("changed_entity_key_ids")
+        changed_env = commands.change_list(repo, rev_range)
+        reverify_action = changed_env["next_actions"]["heddle_reverify_worklist_get"]
+        changed_entity_key_ids = reverify_action["arguments"].get("changed_entity_key_ids")
         if not isinstance(changed_entity_key_ids, list) or not changed_entity_key_ids:
             continue
-        reverify_data = commands.reverify(
+        reverify_env = commands.reverify_worklist(
             repo,
             [int(value) for value in changed_entity_key_ids],
             depth=2,
         )
-        items = reverify_data.get("items")
+        items = reverify_env["data"].get("items")
         if isinstance(items, list) and items:
             return rev_range, "first historical commit with non-empty reverify worklist"
     raise RuntimeError("no real member commit produced a non-empty reverify worklist")
 
 
+def _real_member_sei_client(repo: Path) -> LoomweaveMcpClient | None:
+    probe = LoomweaveProbe(repo=repo).probe()
+    if probe.get("status") != "available":
+        return None
+    return LoomweaveMcpClient(repo=repo)
+
+
 def _executed_baseline(repo: Path, rev_range: str) -> dict[str, Any]:
+    # HX2: the baseline must execute on a host WITHOUT ripgrep. We use
+    # git-grep against the tracked tree (always present where git is) instead of
+    # depending on `rg`, so an actually-executed baseline reaches ready=True.
     diff_cmd = ["git", "diff", "--name-only", rev_range]
     diff_output = _git(repo, diff_cmd[1:])
     changed_paths = [line for line in diff_output.splitlines() if line]
     grep_hits: dict[str, dict[str, object]] = {}
     commands_executed = [" ".join(diff_cmd)]
     for pattern in _grep_patterns(changed_paths):
-        rg_cmd = ["rg", "-n", "--", pattern, "."]
+        grep_cmd = ["git", "grep", "-n", "--fixed-strings", "--", pattern]
         proc = subprocess.run(
-            rg_cmd,
+            grep_cmd,
             cwd=repo,
             check=False,
             text=True,
             capture_output=True,
             timeout=15,
         )
-        commands_executed.append(" ".join(rg_cmd))
+        commands_executed.append(" ".join(grep_cmd))
+        # git grep exits 1 when there are no matches; both 0 and 1 are an
+        # executed baseline, only other codes are tool failures.
         grep_hits[pattern] = {
             "returncode": proc.returncode,
             "line_count": len([line for line in proc.stdout.splitlines() if line]),
+            "executed": proc.returncode in (0, 1),
         }
+    baseline_executed = (
+        bool(changed_paths)
+        and bool(grep_hits)
+        and all(hit["executed"] for hit in grep_hits.values())
+    )
     return {
-        "baseline_executed": bool(changed_paths) and bool(grep_hits),
+        "baseline_executed": baseline_executed,
         "rev_range": rev_range,
         "commands_executed": commands_executed,
         "changed_paths": changed_paths,
