@@ -38,6 +38,20 @@ The package installs two entry points:
 - The store lives at `<repo>/.weft/warpline/warpline.db` and is created on first
   use. State is git-ignored.
 
+## Environment variables
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `WARPLINE_LOOMWEAVE_COMMAND` | `loomweave` | The loomweave executable warpline shells out to for SEI resolution and edge capture (used by `backfill`, `ingest-commit`, `loomweave-probe`, and `capture-snapshot`). It is **server/project config**, not public agent input. |
+
+Honest scope: the env var is consulted on the **MCP** path (where the tools take
+no loomweave-command argument). On the **CLI**, the corresponding flag
+(`--loomweave-command`, or `--command` for `loomweave-probe`) defaults to the
+literal `loomweave`, which is truthy and therefore **shadows the env var** unless
+you pass the flag an explicit value. To point the CLI at a non-default loomweave,
+pass the flag — setting only `WARPLINE_LOOMWEAVE_COMMAND` will not change CLI
+behavior.
+
 ## Exit codes
 
 Most commands exit `0` on success. Three commands use a non-zero exit as a signal:

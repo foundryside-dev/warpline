@@ -88,6 +88,11 @@ Filigree's side; the loomweave / wardline / legis consumers are an admitted
 fast-follow *outside* the four-member launch cutover. The seam *contracts* froze at
 the cutover; consumer *implementations* land without renegotiating them.
 
+See the consumer seam exercised live on the federation specimen: Lacuna
+([`lacuna.foundryside.dev`](https://lacuna.foundryside.dev)) runs warpline's tools
+against a catalogued codebase and demonstrates the Filigree consumer seam end to
+end.
+
 ## Degrade-when-absent — the honest table
 
 | Sibling | Present + indexed | Absent / unreachable |

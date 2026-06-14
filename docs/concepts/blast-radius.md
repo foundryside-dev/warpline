@@ -40,6 +40,11 @@ single most important thing to read correctly:
 | `NO_SNAPSHOT` | No usable snapshot exists. | The answer is the changed set only — run `capture_snapshot` and retry. |
 | `SKIPPED` | A capture ran but loomweave was absent, so no edges were recorded. | Same as `NO_SNAPSHOT` for traversal. |
 
+A `DELTA` answer includes a `failed_entities` list naming which entities were not
+captured and why — see the
+[`capture_snapshot` data shape](../reference/mcp-tools.md#warpline_edge_snapshot_capture--capture_snapshot)
+in the MCP tool reference (`[{"locator": "...", "reason": "..."}]`).
+
 An empty `affected` list under `NO_SNAPSHOT` means **"warpline has no graph to look
 at,"** not **"nothing is affected."** warpline will never let a thin answer pass for
 a complete one — a `warnings` entry restates the limitation in prose, too.
