@@ -1,0 +1,475 @@
+---
+// ============================================================
+// warpline.foundryside.dev — the Warpline member spoke site.
+//
+// The member-page template (IA §5.1), filled with Warpline's own
+// facts and driven by the shared @weft/site-kit data so this site
+// and the hub cannot drift (IA §1.3, §3). Block order (§4.2):
+//   Hero → What it is → Key capabilities → Usage snapshot →
+//   How it composes (pairings) → Status & honest limits →
+//   Links/pointers → CTA.
+//
+// Substance is sourced from the warpline repo's now-fixed docs/
+// (index, getting-started, concepts/blast-radius, federation) and
+// README.md. The roster/matrix/cross-links come from the KIT DATA
+// (ROSTER / MATRIX / pairingsFor), never hardcoded. Advisory-only,
+// never gates; consumes SEI, never mints — stated in the open.
+// Light theme only; no emoji; machine facts in mono.
+// ============================================================
+import Layout from '@weft/site-kit/layouts/Layout.astro';
+import { Button, Badge, Tag, Banner, MemberMark, SeiTag, EnrichmentChip, FreshnessMeter } from '@weft/site-kit/components';
+import {
+  SEI_SPINE,
+  getMember,
+  pairingsFor,
+  partnerOf,
+  memberUrl,
+  repoUrl,
+} from '@weft/site-kit/data';
+
+const SELF = 'warpline';
+const me = getMember(SELF);
+
+// This member's slice of the combination matrix (IA §2.2) — the sanctioned
+// cross-link channel. Each card links cross-subdomain to the partner.
+const pairings = pairingsFor(SELF);
+
+const REPO_URL = repoUrl(SELF);
+const HUB = 'https://weft.foundryside.dev/';
+const SPINE_ANCHOR = SEI_SPINE.hubAnchor; // weft.foundryside.dev/#spine
+const LACUNA_URL = memberUrl('lacuna');
+
+// Map a matrix pairing status to a Badge tone — honest, never rounded up
+// ('partial'/'planned' are NEVER styled as 'live'; IA §2.2, §3.2).
+const statusTone = (s) => (s === 'live' ? 'ok' : s === 'partial' ? 'warn' : 'neutral');
+
+// version snapshot — sourced from the warpline repo (README / pyproject 1.0.0).
+// A snapshot with a repo pointer, never a bare restated number (IA §5.1).
+const VERSION = '1.0.0';
+
+// The six frozen federation tools (docs/reference/mcp-tools.md, README "The six
+// MCP tools"). Surface facts are the repo's; this is a curated snapshot, not the
+// reference — the deep reference lives under this subdomain's own paths.
+const TOOLS = [
+  { endorsed: 'warpline_change_list', shim: 'changed', role: 'Changed entities for a rev range; hands back ready-to-call next actions. Call first.' },
+  { endorsed: 'warpline_entity_timeline_get', shim: 'timeline', role: 'Ordered change history for one entity; reports sei_resolution only, never lineage.' },
+  { endorsed: 'warpline_entity_churn_count_get', shim: 'churn', role: 'Per-entity change-event counts; a never-observed entity is churn_count: 0.' },
+  { endorsed: 'warpline_impact_radius_get', shim: 'blast_radius', role: 'Downstream affected set with mandatory completeness + staleness.' },
+  { endorsed: 'warpline_reverify_worklist_get', shim: 'reverify', role: 'The agent worklist to recheck before claiming completion.' },
+  { endorsed: 'warpline_edge_snapshot_capture', shim: 'capture_snapshot', role: 'The only mutating tool; captures dated loomweave edges into .weft/warpline/.' },
+];
+
+// Honest limits — MANDATORY and non-empty (IA §5.1). Sourced from
+// docs/index.md "Honest status" + docs/federation.md seam labels.
+const LIMITS = [
+  'Warpline is the 5th admitted member (2026-06-14, PDR-0022). The seam *contracts* froze at the launch cutover; the consumer *implementations* for Loomweave / Wardline / Legis are an admitted fast-follow OUTSIDE the four-member launch cutover. Only the Filigree consumer has shipped.',
+  'The Loomweave inbound seam is PROVEN and FROZEN (real SEI resolution + edge capture). The Filigree work-state read is EARNED (consumed by golden vectors). The Wardline risk seam and the Legis rename feed are RESERVED-SHAPE and non-binding — present in the contract, not yet driven by a real sibling; reported as unavailable / absent, never pretended wired.',
+  'Entity extraction is Python-aware (it derives python:function: / python:class: locators from .py sources); other file types are tracked at file:<path> granularity.',
+  'Blast-radius is only as complete as the captured snapshot. completeness: NO_SNAPSHOT means "changed set only," never "nothing is affected." A thin answer is reported thin.',
+];
+---
+
+<Layout
+  title="Warpline — what changed, when, and what does this change touch"
+  description="Warpline is the Weft federation's temporal / change-impact authority: per-entity change history keyed on the SEI spine, dated edge snapshots, downstream blast-radius, and the re-verification worklist. Advisory only — it never gates."
+  member={SELF}
+  breadcrumb
+  repo={REPO_URL}
+>
+  {/* ---------------------------------------------------------------- */}
+  {/* 1 · Hero — tagline + member dossier terminal (the honesty beat)  */}
+  {/* ---------------------------------------------------------------- */}
+  <section class="hero" style={`--thread: ${me.thread};`}>
+    <div class="wrap">
+      <p class="eyebrow">Warpline · temporal / change-impact · Python</p>
+      <h1 class="hero__title">What changed, when — and what does this change touch.</h1>
+      <p class="hero__sub">
+        Per-entity change history keyed on the <code>SEI</code> spine, dated edge
+        snapshots, downstream blast-radius, and the re-verification worklist.
+        Loomweave owns the <em>now</em>; Warpline owns <em>over time</em>.
+        <strong>Advisory only — it never gates.</strong>
+      </p>
+      <div class="hero__meta">
+        <Tag client:visible>{me.lang}</Tag>
+        <span class="hero__ver">v{VERSION}</span>
+        <span class="hero__vernote">snapshot — see <a href={REPO_URL} rel="noopener">the repo</a></span>
+      </div>
+      <div class="hero__cta">
+        <Button client:idle as="a" href="#capabilities">See what it gives you →</Button>
+        <Button client:idle as="a" variant="secondary" href={REPO_URL} rel="noopener">Read the repo →</Button>
+      </div>
+
+      {/* member dossier terminal — one changed entity, typed facts. The brand
+          refuses an all-green dossier: at least one non-present state (IA §3.4,
+          §5.1). Here Loomweave is present (proven seam), Filigree present
+          (earned), Wardline absent, Legis unavailable. */}
+      <div class="terminal">
+        <div class="terminal__lines">
+          <div><span class="terminal__prompt">$</span> warpline <span class="terminal__arg">changed</span> --rev-range HEAD~1..HEAD</div>
+          <div class="terminal__dim">resolving changed entities → temporal facts, keyed on the SEI spine…</div>
+        </div>
+        <div class="terminal__chips">
+          <SeiTag client:visible value={SEI_SPINE.sampleSei} copyable />
+          <EnrichmentChip client:visible state="present" peer="loomweave" />
+          <EnrichmentChip client:visible state="present" peer="filigree" />
+          <EnrichmentChip client:visible state="absent" peer="wardline" />
+          <EnrichmentChip client:visible state="unavailable" peer="legis" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {/* ---------------------------------------------------------------- */}
+  {/* 2 · What it is — the first-principles job                        */}
+  {/* ---------------------------------------------------------------- */}
+  <section class="band">
+    <div class="wrap">
+      <p class="eyebrow">What it is</p>
+      <h2 class="h2">The one thing no other member stores: change history over time.</h2>
+      <p class="lede">
+        Warpline owns <code>change_events</code>, dated edge snapshots,
+        downstream-affected queries, and the re-verify worklist — the temporal
+        facts that answer, before you call a change done: which entities changed,
+        by whom, when, what is downstream-affected over the call graph, and what
+        must I re-verify? It boots, ingests, and answers with no sibling installed;
+        all state lives under <code>.weft/warpline/</code> (git-ignored).
+      </p>
+      <Banner client:visible tone="info" title="Advisory only — it never gates a change, never enforces a policy, never decides whether a change is allowed.">
+        This is deconfliction tooling, not security. A Warpline answer is an
+        enhancement you can act on or ignore — never a verdict you must clear.
+        Warpline <strong>consumes</strong> Loomweave <code>SEI</code> and never mints identity;
+        it <strong>feeds</strong> advisory change-impact facts to governance-style surfaces
+        (Legis / Charter), which run their own policy. Warpline supplies the facts
+        and never makes the call.
+      </Banner>
+    </div>
+  </section>
+
+  {/* ---------------------------------------------------------------- */}
+  {/* 3 · Key capabilities — incl. the FreshnessMeter (Warpline's      */}
+  {/*     signature component, IA §3.5)                                 */}
+  {/* ---------------------------------------------------------------- */}
+  <section id="capabilities" class="section">
+    <div class="wrap">
+      <p class="eyebrow">Key capabilities</p>
+      <h2 class="h2">Blast-radius and the worklist — reported as honestly as they are computed.</h2>
+
+      <div class="grid grid--2">
+        <article class="card cap">
+          <h3 class="cap__title">Impact radius, freshness-honest</h3>
+          <p class="cap__body">
+            A bounded traversal over the latest dated edge snapshot returns the
+            downstream-affected set — and carries <code>completeness</code> +
+            <code>staleness</code> on its face. An empty affected set under
+            <code>NO_SNAPSHOT</code> means "no graph to look at," never "nothing is
+            affected." The <code>FreshnessMeter</code> is the point: a thin answer
+            looks thin.
+          </p>
+          <div class="cap__demo">
+            <FreshnessMeter client:visible completeness={0.62} staleness="3 commits behind snapshot" label="impact radius · DELTA" />
+          </div>
+        </article>
+
+        <article class="card cap">
+          <h3 class="cap__title">The re-verification worklist</h3>
+          <p class="cap__body">
+            <code>reverify</code> renders the blast-radius into a prioritized
+            worklist of entities to recheck before you claim a change is done. The
+            changed entities are <em>always</em> present (<code>reason: changed</code>),
+            so it is useful even with no snapshot; downstream items are added when a
+            snapshot exists. <code>priority</code> comes from sibling enrichment
+            (Filigree) — never invented by Warpline.
+          </p>
+          <div class="cap__chips">
+            <EnrichmentChip client:visible state="present" peer="loomweave" />
+            <EnrichmentChip client:visible state="present" peer="filigree" />
+            <EnrichmentChip client:visible state="unavailable" peer="wardline" />
+          </div>
+        </article>
+
+        <article class="card cap">
+          <h3 class="cap__title">Per-entity timeline + churn</h3>
+          <p class="cap__body">
+            <code>timeline</code> gives the ordered change history for one entity
+            (reporting <code>sei_resolution</code> only, never lineage);
+            <code>churn</code> gives per-entity change-event counts. A
+            never-observed entity is honestly <code>churn_count: 0</code>.
+          </p>
+        </article>
+
+        <article class="card cap">
+          <h3 class="cap__title">Keyed on the SEI spine</h3>
+          <p class="cap__body">
+            {SEI_SPINE.consumerNote} Every entity carries both <code>locator</code>
+            and <code>sei</code> (<code>loomweave:eid:…</code>, stored opaquely);
+            <code>warpline_entity_key_id</code> is internal and not a federation key.
+          </p>
+          <p class="cap__more"><a href={SPINE_ANCHOR} rel="noopener">Read the SEI spine on the hub →</a></p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  {/* ---------------------------------------------------------------- */}
+  {/* 4 · Usage snapshot — curated quick-start, NOT the reference      */}
+  {/* ---------------------------------------------------------------- */}
+  <section class="band">
+    <div class="wrap">
+      <p class="eyebrow">Usage snapshot</p>
+      <h2 class="h2">The core loop, in four commands.</h2>
+      <p class="lede">
+        A curated quick-start — the full CLI and MCP reference lives under this
+        subdomain's own paths and in <a href={REPO_URL} rel="noopener">the repo</a>.
+        Warpline is local-first; none of these need a sibling installed.
+      </p>
+
+      <div class="terminal terminal--block">
+        <div class="terminal__lines">
+          <div><span class="terminal__prompt">$</span> warpline backfill --repo . --json          <span class="terminal__dim"># ingest git history</span></div>
+          <div><span class="terminal__prompt">$</span> warpline changed  --repo . --rev-range HEAD~1..HEAD --json</div>
+          <div><span class="terminal__prompt">$</span> warpline capture-snapshot --repo . --json  <span class="terminal__dim"># capture loomweave edges</span></div>
+          <div><span class="terminal__prompt">$</span> warpline reverify --repo . --changed-entity-key-id 1 --json</div>
+        </div>
+      </div>
+
+      <p class="note">
+        Call <code>changed</code> first — its <code>next_actions</code> hand back
+        ready-to-call arguments for <code>reverify</code> and <code>blast_radius</code>.
+        The same loop runs over the <code>warpline-mcp</code> stdio server. The six
+        frozen federation tools:
+      </p>
+
+      <div class="tools">
+        {TOOLS.map((t) => (
+          <div class="tools__row">
+            <code class="tools__endorsed">{t.endorsed}</code>
+            <code class="tools__shim">{t.shim}</code>
+            <span class="tools__role">{t.role}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ---------------------------------------------------------------- */}
+  {/* 5 · How it composes — this member's matrix slice (KIT DATA)      */}
+  {/* ---------------------------------------------------------------- */}
+  <section class="section">
+    <div class="wrap">
+      <p class="eyebrow">How it composes · this member's pairings</p>
+      <h2 class="h2">Each pairing is honest on its face.</h2>
+      <p class="lede">
+        Warpline composes pairwise and enrich-only — never load-bearing for anyone,
+        and no one load-bearing for it. Status is intrinsic to each row; a
+        <code>partial</code> or <code>planned</code> pair is never rendered as
+        <code>live</code>.
+      </p>
+
+      <div class="grid grid--2">
+        {pairings.map((p) => {
+          const partner = partnerOf(p, SELF);
+          const partnerUrl = memberUrl(partner);
+          return (
+            <article class="card card--pair">
+              <div class="pair__head">
+                <span class="pair__mark"><MemberMark client:visible member={SELF} /></span>
+                <span class="pair__plus" aria-hidden="true">+</span>
+                {/* the partner MemberMark links cross-subdomain — the matrix IS
+                    the sanctioned cross-link channel (IA §2.2, §2.3). */}
+                <a class="pair__mark" href={partnerUrl}><MemberMark client:visible member={partner} /></a>
+                <span class="pair__status">
+                  <Badge client:visible tone={statusTone(p.status)} dot>{p.status}</Badge>
+                </span>
+              </div>
+              <p class="pair__cap">{p.capability}</p>
+              {p.note && <p class="pair__note">{p.note}</p>}
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  </section>
+
+  {/* ---------------------------------------------------------------- */}
+  {/* 6 · Status & honest limits — MANDATORY, non-empty (IA §5.1)      */}
+  {/* ---------------------------------------------------------------- */}
+  <section class="band">
+    <div class="wrap">
+      <p class="eyebrow">Status &amp; honest limits</p>
+      <h2 class="h2">What Warpline is, and what it cannot do yet.</h2>
+      <Banner client:visible tone="warn" title="The seams that have not shipped are not presented as working.">
+        Warpline is production-stable for its own surface, and scrupulously honest
+        about what is wired and what is not. Read these before you wire it in.
+      </Banner>
+      <ul class="limits">
+        {LIMITS.map((l) => <li set:html={l.replace(/\*([^*]+)\*/g, '<em>$1</em>')}></li>)}
+      </ul>
+    </div>
+  </section>
+
+  {/* ---------------------------------------------------------------- */}
+  {/* 7 · Links / pointers                                             */}
+  {/* ---------------------------------------------------------------- */}
+  <section class="section">
+    <div class="wrap">
+      <p class="eyebrow">Links · pointers</p>
+      <h2 class="h2">Where the authoritative facts live.</h2>
+      <ul class="links">
+        <li><a href={REPO_URL} rel="noopener">Repository — github.com/foundryside-dev/warpline</a><span class="links__note"> · README, CHANGELOG, pyproject (the surface facts that move)</span></li>
+        <li><a href={`${REPO_URL}/blob/main/docs/getting-started.md`} rel="noopener">Getting started — install to first worklist</a></li>
+        <li><a href={`${REPO_URL}/blob/main/docs/reference/cli.md`} rel="noopener">CLI reference — every command, flag, exit code</a></li>
+        <li><a href={`${REPO_URL}/blob/main/docs/reference/mcp-tools.md`} rel="noopener">MCP tool reference — all six frozen tools</a></li>
+        <li><a href={`${REPO_URL}/blob/main/docs/federation.md`} rel="noopener">Federation — seams, what it feeds / consumes, degrade</a></li>
+        <li><a href={SPINE_ANCHOR} rel="noopener">The SEI spine — federation framing on the hub</a></li>
+        <li><a href={HUB} rel="noopener">The Weft hub — roster, doctrine, the full matrix</a></li>
+      </ul>
+    </div>
+  </section>
+
+  {/* ---------------------------------------------------------------- */}
+  {/* 8 · CTA — see it on the specimen + read the doctrine             */}
+  {/* ---------------------------------------------------------------- */}
+  <section class="cta" style={`--thread: ${me.thread};`}>
+    <div class="wrap cta__inner">
+      <span class="cta__dot" style={`background:${me.thread}`}></span>
+      <div class="cta__copy">
+        <p class="cta__lead">Want to see it actually run?</p>
+        <p class="cta__sub">
+          <strong>Lacuna</strong> runs Warpline's tools against a catalogued
+          codebase and demonstrates the Filigree consumer seam end to end.
+        </p>
+      </div>
+      <span class="cta__buttons">
+        <Button client:idle as="a" href={LACUNA_URL}>See it on the specimen →</Button>
+        <Button client:idle as="a" variant="secondary" href={`${HUB}#doctrine`} rel="noopener">Read the doctrine →</Button>
+      </span>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  /* Page-local layout. Brand atoms (colors, type, motifs) come ONLY from the
+     site-kit token layer — no new colors, no dark mode (light theme only). The
+     copper thread is read from the kit as var(--thread) (set per section). */
+  .wrap { max-width: var(--width-content); margin: 0 auto; padding: 0 36px; }
+  .eyebrow {
+    font: var(--type-mono-sm); text-transform: uppercase;
+    letter-spacing: var(--tracking-caps); color: var(--text-muted);
+    font-size: var(--text-xs); margin: 0 0 14px;
+  }
+  .h2 { font: var(--type-h1); color: var(--text-strong); margin: 0 0 16px; max-width: 28ch; }
+  .lede { font: var(--type-body); color: var(--text-body); max-width: 64ch; margin: 0 0 26px; }
+  .lede code, .cap__body code, .pair__cap code, .note code, .cap__title code {
+    font-family: var(--font-mono); font-size: 0.92em; color: var(--text-strong);
+  }
+
+  .section { padding: 64px 0; }
+  .band {
+    padding: 64px 0; background: var(--bg-sunken);
+    border-top: 1px solid var(--border-hairline);
+    border-bottom: 1px solid var(--border-hairline);
+  }
+
+  /* hero — copper thread accent on the top rule */
+  .hero {
+    padding: 64px 0 64px;
+    border-top: 4px solid var(--thread);
+    border-bottom: 1px solid var(--border-hairline);
+  }
+  .hero__title {
+    font: var(--type-display); color: var(--loom-900);
+    letter-spacing: -0.025em; line-height: 1.06;
+    max-width: 18ch; margin: 0 0 22px;
+  }
+  .hero__sub { font: var(--type-body); font-size: var(--text-lg); color: var(--text-body); max-width: 60ch; margin: 0 0 18px; }
+  .hero__sub strong { color: var(--text-strong); }
+  .hero__sub code { font-family: var(--font-mono); font-size: 0.9em; color: var(--text-strong); }
+  .hero__meta { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 0 0 24px; }
+  .hero__ver { font: var(--type-mono-sm); color: var(--text-strong); }
+  .hero__vernote { font: var(--type-mono-sm); color: var(--text-faint); font-size: var(--text-xs); }
+  .hero__vernote a { color: var(--text-muted); }
+  .hero__cta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 40px; }
+
+  .terminal {
+    background: var(--surface-inverse); border-radius: var(--radius-lg);
+    padding: 18px 20px; max-width: 760px; box-shadow: var(--shadow-lg);
+  }
+  .terminal--block { max-width: 820px; margin-bottom: 22px; }
+  .terminal__lines { font: var(--type-mono); color: var(--text-on-inverse); font-size: var(--text-xs); line-height: 1.8; }
+  .terminal__prompt { color: var(--ash-500); }
+  .terminal__arg { color: var(--indigo-300); }
+  .terminal__dim { color: var(--ash-500); }
+  .terminal__chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+
+  /* cards (shared) */
+  .grid { display: grid; gap: 16px; }
+  .grid--2 { grid-template-columns: repeat(2, 1fr); }
+  .card {
+    background: var(--surface-card); border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow-xs);
+  }
+
+  /* capability card */
+  .cap { padding: 20px; }
+  .cap__title { font: var(--type-h3); color: var(--text-strong); margin: 0 0 10px; }
+  .cap__body { font: var(--type-body-sm); color: var(--text-body); margin: 0 0 14px; }
+  .cap__demo { margin-top: 14px; }
+  .cap__chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+  .cap__more { margin: 12px 0 0; font: var(--type-mono-sm); }
+  .cap__more a { color: var(--indigo-700); }
+
+  /* usage tools list */
+  .note { font: var(--type-body-sm); color: var(--text-body); max-width: 64ch; margin: 0 0 18px; }
+  .tools {
+    background: var(--surface-card); border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-md); overflow: hidden;
+  }
+  .tools__row {
+    display: grid; grid-template-columns: minmax(220px, 1fr) 130px 2fr;
+    gap: 12px; align-items: baseline; padding: 12px 16px;
+    border-top: 1px solid var(--border-hairline);
+  }
+  .tools__row:first-child { border-top: 0; }
+  .tools__endorsed { font: var(--type-mono-sm); color: var(--text-strong); }
+  .tools__shim { font: var(--type-mono-sm); color: var(--indigo-700); }
+  .tools__role { font: var(--type-body-sm); color: var(--text-muted); }
+
+  /* matrix pair card */
+  .card--pair { padding: 16px; }
+  .pair__head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .pair__mark { text-decoration: none; }
+  a.pair__mark:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .pair__plus { color: var(--text-faint); font-family: var(--font-mono); }
+  .pair__status { margin-left: auto; }
+  .pair__cap { font: var(--type-body-sm); color: var(--text-body); margin: 0; }
+  .pair__note { font: var(--type-mono-sm); color: var(--text-faint); margin: 8px 0 0; line-height: 1.5; }
+
+  /* honest limits */
+  .limits { margin: 18px 0 0; padding-left: 18px; color: var(--text-body); font: var(--type-body-sm); max-width: 70ch; }
+  .limits li { margin: 12px 0; line-height: 1.6; }
+  .limits code { font-family: var(--font-mono); font-size: 0.92em; color: var(--text-strong); }
+
+  /* links */
+  .links { margin: 0; padding-left: 18px; color: var(--text-body); font: var(--type-body); }
+  .links li { margin: 10px 0; }
+  .links a { color: var(--indigo-700); }
+  .links__note { color: var(--text-faint); font: var(--type-mono-sm); font-size: var(--text-xs); }
+
+  /* CTA strip */
+  .cta { padding: 40px 0; background: var(--bg-sunken); border-top: 4px solid var(--thread); }
+  .cta__inner { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .cta__dot { width: 12px; height: 12px; border-radius: 3px; flex: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+  .cta__copy { flex: 1 1 360px; }
+  .cta__lead { font: var(--type-body); font-weight: var(--fw-semibold); color: var(--text-strong); margin: 0 0 2px; }
+  .cta__sub { font: var(--type-body-sm); color: var(--text-muted); margin: 0; }
+  .cta__buttons { flex: none; display: flex; gap: 12px; flex-wrap: wrap; }
+
+  @media (max-width: 880px) {
+    .grid--2 { grid-template-columns: 1fr; }
+    .tools__row { grid-template-columns: 1fr; gap: 4px; }
+  }
+  @media (max-width: 720px) {
+    .wrap { padding: 0 18px; }
+    .hero { padding: 48px 0; }
+  }
+</style>
