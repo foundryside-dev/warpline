@@ -12,6 +12,15 @@
   "data": {
     "completeness": "NO_SNAPSHOT",
     "staleness": {"snapshot_commit": null, "commits_behind": null},
+    "resolved": [
+      {
+        "ref": {"kind": "warpline_entity_key_id", "value": 1},
+        "entity_key_id": 1,
+        "sei": "loomweave:eid:0123456789abcdef0123456789abcdef",
+        "locator": "python:function:src/pkg/mod.py::fn"
+      }
+    ],
+    "unresolved": [],
     "items": [
       {
         "entity": {

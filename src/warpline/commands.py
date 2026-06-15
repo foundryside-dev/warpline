@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from warpline.envelope import build_envelope, enrichment_state
-from warpline.errors import BadRevisionError
+from warpline.errors import BadRevisionError, InvalidChangedRefsError
 from warpline.loomweave import LoomweaveMcpClient, LoomweaveProbe
 from warpline.propagation import blast_radius as compute_blast_radius
 from warpline.refs import (
@@ -35,6 +35,55 @@ _EDGES_FOR_COMPLETENESS = {
     "NO_SNAPSHOT": "absent",
     "SKIPPED": "skipped",
 }
+
+
+def _is_stale(staleness: dict[str, Any]) -> bool:
+    """The snapshot was captured at a commit behind HEAD.
+
+    ``commits_behind`` is the live answer to ``snapshot_commit..HEAD``; any
+    positive count means the stored edge graph no longer describes HEAD. A
+    ``None`` count means we could not ask git (detached snapshot commit, shallow
+    clone) — we treat that as *unknown, therefore not-proven-fresh* and surface
+    it as stale rather than silently claiming completeness.
+    """
+
+    behind = staleness.get("commits_behind")
+    if behind is None:
+        return staleness.get("snapshot_commit") is not None
+    return _as_int(behind) > 0
+
+
+def _edges_enrichment(completeness: str, staleness: dict[str, Any]) -> str:
+    """Map (completeness, staleness) → the closed ``enrichment.edges`` vocab.
+
+    A FULL-or-DELTA snapshot that is *behind HEAD* downgrades to the live
+    ``"stale"`` value: the edge graph is real but no longer describes the
+    working tree, so completeness must NOT be claimed. Without this, a stale-
+    but-FULL snapshot would emit ``edges:"present"`` and hand an agent a
+    confident affected-set with zero freshness warning (PDR-0023: the quiet
+    segfault). NO_SNAPSHOT / SKIPPED are already-honest "we have nothing" states
+    and are reported as-is regardless of staleness.
+    """
+
+    base = _EDGES_FOR_COMPLETENESS.get(completeness, "absent")
+    if completeness in {"FULL", "DELTA"} and _is_stale(staleness):
+        return "stale"
+    return base
+
+
+def _staleness_warnings(completeness: str, staleness: dict[str, Any]) -> list[str]:
+    if completeness in {"FULL", "DELTA"} and _is_stale(staleness):
+        behind = staleness.get("commits_behind")
+        commit = str(staleness.get("snapshot_commit") or "unknown")[:8]
+        if behind is None:
+            tail = "snapshot commit is not on HEAD's history; freshness unknown"
+        else:
+            tail = f"{behind} commit(s) behind HEAD"
+        return [
+            f"STALE: edge snapshot @ {commit} is {tail}; affected set is not complete for "
+            "HEAD — recapture (warpline capture-snapshot) before trusting completeness"
+        ]
+    return []
 
 
 def session_context(repo: Path) -> str:
@@ -81,26 +130,89 @@ def _as_int(value: object) -> int:
     return value
 
 
-def _resolved_key_ids(
+def _resolve_changed_inputs(
     store: WarplineStore,
     repo: Path,
     *,
     rev_range: str | None,
     changed_refs: list[dict[str, str]],
     changed_entity_key_ids: list[int],
-) -> list[int]:
-    ids: set[int] = set(changed_entity_key_ids)
+) -> tuple[list[int], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Resolve the caller's change-set into stored entity keys.
+
+    Returns ``(key_ids, resolved, unresolved)``. The miss-set is the honesty
+    surface for the resolve join: a ``changed_ref`` that does not map to any
+    stored entity_key — or a raw ``entity_key_id`` that is unknown to this repo's
+    store — was, before this change, silently dropped, so an agent asking "does
+    my change break anything?" got a confident affected-set computed over an
+    *incomplete* seed set with no signal that half its refs never resolved.
+    Every unresolved input now appears in ``unresolved`` with a machine-readable
+    ``reason`` so the caller can ask "did my SEI actually resolve into the
+    snapshot?" and get a yes/no, not a silent omission.
+    """
+
+    ids: set[int] = set()
+    resolved: list[dict[str, Any]] = []
+    unresolved: list[dict[str, Any]] = []
+
+    # Raw entity_key_ids are a compatibility seed, not a federation key; still,
+    # an id unknown to this store is a miss the caller must see.
+    known_ids = store.entity_keys_by_ids(repo, sorted(set(changed_entity_key_ids)))
+    for key_id in changed_entity_key_ids:
+        if key_id in known_ids:
+            ids.add(key_id)
+            row = known_ids[key_id]
+            resolved.append(
+                {
+                    "ref": {"kind": "warpline_entity_key_id", "value": key_id},
+                    "entity_key_id": key_id,
+                    "sei": row.get("sei"),
+                    "locator": row.get("locator"),
+                }
+            )
+        else:
+            unresolved.append(
+                {
+                    "ref": {"kind": "warpline_entity_key_id", "value": key_id},
+                    "reason": "unknown_entity_key_id",
+                }
+            )
+
     for ref in changed_refs:
-        row = store.resolve_ref(repo, ref["kind"], ref["value"])
-        if row is not None:
-            ids.add(_as_int(row["id"]))
+        resolved_row = store.resolve_ref(repo, ref["kind"], ref["value"])
+        if resolved_row is not None:
+            resolved_id = _as_int(resolved_row["id"])
+            ids.add(resolved_id)
+            resolved.append(
+                {
+                    "ref": ref,
+                    "entity_key_id": resolved_id,
+                    "sei": resolved_row.get("sei"),
+                    "locator": resolved_row.get("locator"),
+                }
+            )
+        else:
+            reason = "sei_not_in_snapshot" if ref.get("kind") == "sei" else "ref_not_in_snapshot"
+            unresolved.append({"ref": ref, "reason": reason})
+
     if rev_range is not None:
         commit_shas = _rev_range_commits(repo, rev_range)
         for event in store.list_change_events(repo, commit_shas=commit_shas):
-            key_id = event.get("entity_key_id")
-            if isinstance(key_id, int):
-                ids.add(key_id)
-    return sorted(ids)
+            event_key_id = event.get("entity_key_id")
+            if isinstance(event_key_id, int):
+                ids.add(event_key_id)
+
+    return sorted(ids), resolved, unresolved
+
+
+def _unresolved_warnings(unresolved: list[dict[str, Any]]) -> list[str]:
+    if not unresolved:
+        return []
+    refs = ", ".join(str(item["ref"].get("value")) for item in unresolved)
+    return [
+        f"UNRESOLVED: {len(unresolved)} changed ref(s) did not resolve into the store and were "
+        f"NOT seeded into the affected-set traversal ({refs}); see data.unresolved"
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -382,7 +494,7 @@ def impact_radius(
 ) -> dict[str, Any]:
     refs = parse_changed_refs(changed_refs)
     with WarplineStore.open(default_store_path(repo)) as store:
-        key_ids = _resolved_key_ids(
+        key_ids, resolved, unresolved = _resolve_changed_inputs(
             store,
             repo,
             rev_range=rev_range,
@@ -392,9 +504,12 @@ def impact_radius(
         result = compute_blast_radius(store, repo, key_ids, depth)
         changed, affected = _enrich_blast(store, repo, result)
         completeness = result["completeness"]
+        staleness = result["staleness"]
         data = {
             "completeness": completeness,
-            "staleness": result["staleness"],
+            "staleness": staleness,
+            "resolved": resolved,
+            "unresolved": unresolved,
             "changed": changed,
             "affected": affected,
             "page": _page(limit),
@@ -415,10 +530,12 @@ def impact_radius(
             SCHEMA_IMPACT_RADIUS,
             query=query,
             data=data,
-            enrichment=enrichment_state(
-                edges=_EDGES_FOR_COMPLETENESS.get(completeness, "absent")
+            enrichment=enrichment_state(edges=_edges_enrichment(completeness, staleness)),
+            warnings=(
+                _completeness_warnings(completeness)
+                + _staleness_warnings(completeness, staleness)
+                + _unresolved_warnings(unresolved)
             ),
-            warnings=_completeness_warnings(completeness),
         )
 
 
@@ -445,7 +562,7 @@ def reverify_worklist(
 ) -> dict[str, Any]:
     refs = parse_changed_refs(changed_refs)
     with WarplineStore.open(default_store_path(repo)) as store:
-        key_ids = _resolved_key_ids(
+        key_ids, resolved, unresolved = _resolve_changed_inputs(
             store,
             repo,
             rev_range=rev_range,
@@ -454,16 +571,20 @@ def reverify_worklist(
         )
         result = compute_blast_radius(store, repo, key_ids, depth)
         changed, affected = _enrich_blast(store, repo, result)
+        completeness = result["completeness"]
+        staleness = result["staleness"]
         items, work_seen, filigree_candidates = render_reverify_worklist(
             changed=changed,
             affected=affected,
-            completeness=result["completeness"],
-            staleness=result["staleness"],
+            completeness=completeness,
+            staleness=staleness,
             work_client=work_client,
         )
         data = {
-            "completeness": result["completeness"],
-            "staleness": result["staleness"],
+            "completeness": completeness,
+            "staleness": staleness,
+            "resolved": resolved,
+            "unresolved": unresolved,
             "items": items[:limit],
             "next_actions": {"filigree": filigree_candidates},
             "page": _page(limit),
@@ -489,17 +610,54 @@ def reverify_worklist(
             query=query,
             data=data,
             enrichment=enrichment_state(
-                edges=_EDGES_FOR_COMPLETENESS.get(result["completeness"], "absent"),
+                edges=_edges_enrichment(completeness, staleness),
                 work=work_state,
             ),
             next_actions={"filigree": filigree_candidates},
-            warnings=_completeness_warnings(result["completeness"]),
+            warnings=(
+                _completeness_warnings(completeness)
+                + _staleness_warnings(completeness, staleness)
+                + _unresolved_warnings(unresolved)
+            ),
         )
 
 
 # ---------------------------------------------------------------------------
 # warpline_edge_snapshot_capture — warpline.edge_snapshot.v1 (only mutating tool)
 # ---------------------------------------------------------------------------
+def _coerce_max_entities(value: Any) -> int | None:
+    """``max_entities`` is an optional positive cap; reject a malformed value
+    LOUDLY rather than advertise-and-ignore it (PDR-0023: dead input)."""
+
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise InvalidChangedRefsError(
+            "max_entities must be a positive integer or null",
+            rejected_field="max_entities",
+        )
+    if value <= 0:
+        raise InvalidChangedRefsError(
+            "max_entities must be a positive integer or null",
+            rejected_field="max_entities",
+        )
+    return value
+
+
+def _coerce_if_stale_after(value: Any) -> str | None:
+    """``if_stale_after`` is an optional ISO-8601 timestamp; a current snapshot
+    captured at-or-after it short-circuits recapture. Reject a non-string."""
+
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise InvalidChangedRefsError(
+            "if_stale_after must be an ISO-8601 timestamp string or null",
+            rejected_field="if_stale_after",
+        )
+    return value
+
+
 def capture_snapshot(
     repo: Path,
     commit: str | None = None,
@@ -507,17 +665,69 @@ def capture_snapshot(
     mode: str = "full",
     dry_run: bool = False,
     loomweave_command: str | None = None,
+    changed_refs: Any = None,
+    if_stale_after: Any = None,
+    max_entities: Any = None,
+    idempotency_key: Any = None,
 ) -> dict[str, Any]:
     # loomweave_command is server/project config (env), NOT public agent input.
     command = loomweave_command or os.environ.get("WARPLINE_LOOMWEAVE_COMMAND", "loomweave")
+    # Consume every advertised input or reject it loudly — no advertise-and-ignore.
+    if mode not in {"full", "changed_only"}:
+        raise InvalidChangedRefsError(
+            "mode must be 'full' or 'changed_only'", rejected_field="mode"
+        )
+    refs = parse_changed_refs(changed_refs)
+    if mode == "changed_only" and not refs:
+        raise InvalidChangedRefsError(
+            "mode 'changed_only' requires a non-empty changed_refs scope",
+            rejected_field="changed_refs",
+        )
+    cap = _coerce_max_entities(max_entities)
+    stale_after = _coerce_if_stale_after(if_stale_after)
+    # idempotency_key is an opaque caller-supplied correlation token; echoed back
+    # so a caller can tie a response to its request, never silently dropped.
+    idem_key = None if idempotency_key is None else str(idempotency_key)
+
     probe = LoomweaveProbe(repo=repo, command=command).probe()
     status = probe.get("status")
     source_version = str(probe.get("version") or probe.get("reason") or "unknown")
     client = LoomweaveMcpClient(repo=repo, command=command) if status == "available" else None
+    scope_locators = (
+        {ref["value"] for ref in refs if ref["kind"] in {"locator", "qualname", "path"}}
+        if mode == "changed_only"
+        else None
+    )
     with WarplineStore.open(default_store_path(repo)) as store:
-        had_snapshot = store.latest_snapshot(repo) is not None
+        existing = store.latest_snapshot(repo)
+        had_snapshot = existing is not None
+        warnings: list[str] = []
         data: dict[str, Any]
-        if dry_run:
+        # if_stale_after: a current snapshot captured at-or-after the watermark is
+        # fresh enough; honor the short-circuit instead of blindly recapturing.
+        if (
+            not dry_run
+            and stale_after is not None
+            and existing is not None
+            and str(existing.get("captured_at") or "") >= stale_after
+        ):
+            data = {
+                "snapshot_id": existing.get("id"),
+                "commit_sha": existing.get("commit_sha"),
+                "source": existing.get("source"),
+                "source_version": existing.get("source_version"),
+                "completeness": existing.get("completeness"),
+                "entities": 0,
+                "edges": 0,
+                "failed_entities": [],
+                "idempotency": "already_current",
+                "idempotency_key": idem_key,
+            }
+            warnings.append(
+                f"FRESH: existing snapshot captured at {existing.get('captured_at')} is at or "
+                f"after if_stale_after={stale_after}; recapture skipped"
+            )
+        elif dry_run:
             completeness = "FULL" if client is not None else "SKIPPED"
             data = {
                 "snapshot_id": None,
@@ -529,14 +739,26 @@ def capture_snapshot(
                 "edges": 0,
                 "failed_entities": [],
                 "idempotency": "dry_run",
+                "idempotency_key": idem_key,
             }
         else:
             result = capture_edge_snapshot(
-                store, repo, commit_sha=commit, client=client, source_version=source_version
+                store,
+                repo,
+                commit_sha=commit,
+                client=client,
+                source_version=source_version,
+                scope_locators=scope_locators,
+                max_entities=cap,
             )
             result["idempotency"] = "already_current" if had_snapshot else "created"
             result.pop("query", None)
             result.pop("enrichment", None)
+            if result.get("capped"):
+                warnings.append(
+                    f"CAPPED: max_entities={cap} limited the captured entity set; completeness "
+                    "downgraded to DELTA (affected-set is not complete)"
+                )
             data = {
                 "snapshot_id": result.get("snapshot_id"),
                 "commit_sha": result.get("commit_sha"),
@@ -547,6 +769,7 @@ def capture_snapshot(
                 "edges": result.get("edges", 0),
                 "failed_entities": result.get("failed_entities", []),
                 "idempotency": result["idempotency"],
+                "idempotency_key": idem_key,
             }
         edges_state = _EDGES_FOR_COMPLETENESS.get(str(data["completeness"]), "absent")
         # capture touches the SEI authority (loomweave). When it is unreachable,
@@ -555,7 +778,15 @@ def capture_snapshot(
         query = {
             "repo": str(repo),
             "tool": "warpline_edge_snapshot_capture",
-            "arguments": {"commit": commit, "mode": mode, "dry_run": dry_run},
+            "arguments": {
+                "commit": commit,
+                "mode": mode,
+                "dry_run": dry_run,
+                "changed_refs": refs,
+                "if_stale_after": stale_after,
+                "max_entities": cap,
+                "idempotency_key": idem_key,
+            },
             "filters": {},
             "sort": {},
             "page": {"limit": None, "cursor": None},
@@ -565,5 +796,5 @@ def capture_snapshot(
             query=query,
             data=data,
             enrichment=enrichment_state(edges=edges_state, sei=sei_state),
-            warnings=_completeness_warnings(str(data["completeness"])),
+            warnings=_completeness_warnings(str(data["completeness"])) + warnings,
         )

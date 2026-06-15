@@ -375,6 +375,10 @@ def _h_capture(args: dict[str, Any]) -> dict[str, Any]:
         commit=args.get("commit"),
         mode=str(args.get("mode", "full")),
         dry_run=bool(args.get("dry_run", False)),
+        changed_refs=args.get("changed_refs"),
+        if_stale_after=args.get("if_stale_after"),
+        max_entities=args.get("max_entities"),
+        idempotency_key=args.get("idempotency_key"),
     )
 
 
@@ -386,6 +390,99 @@ for _spec, _handler in zip(
 ):
     _HANDLERS[_spec["endorsed"]] = _handler
     _HANDLERS[_spec["shim"]] = _handler
+
+
+# Honesty invariant (PDR-0023): an inputSchema field that no handler consumes is
+# DEAD INPUT — the schema advertises a knob, the caller turns it, and nothing
+# happens, byte-indistinguishable from honoring it. Each tool declares EXACTLY
+# the schema fields its handler reads (honoring them, or rejecting them loudly).
+# The startup assertion below fails closed if any advertised field is neither
+# consumed nor explicitly tracked as a named fast-follow, so a NEW
+# advertise-and-ignore field can never silently ship.
+_HANDLER_CONSUMES: dict[str, frozenset[str]] = {
+    "warpline_change_list": frozenset({"repo", "rev_range", "limit"}),
+    "warpline_entity_timeline_get": frozenset({"repo", "entity_ref", "entity", "limit"}),
+    "warpline_entity_churn_count_get": frozenset(
+        {"repo", "entity_refs", "window", "sort_by", "sort_order", "limit"}
+    ),
+    "warpline_impact_radius_get": frozenset(
+        {"repo", "rev_range", "changed_refs", "changed_entity_key_ids", "depth", "limit"}
+    ),
+    "warpline_reverify_worklist_get": frozenset(
+        {"repo", "rev_range", "changed_refs", "changed_entity_key_ids", "depth", "limit"}
+    ),
+    # capture honors or loudly rejects EVERY advertised field (the P0 this strike
+    # closes): no fast-follow placeholders remain on this tool.
+    "warpline_edge_snapshot_capture": frozenset(
+        {
+            "repo",
+            "commit",
+            "mode",
+            "changed_refs",
+            "if_stale_after",
+            "max_entities",
+            "dry_run",
+            "idempotency_key",
+        }
+    ),
+}
+
+# Advertised-but-not-yet-wired fields, tracked explicitly per the frozen
+# interface-lock §6 FAST-FOLLOW rows (filters/sort/cursor population). These are
+# documented-dead, not silently-dead: an agent can audit exactly which knobs are
+# inert today, and the assertion still catches any field that is neither
+# consumed nor on this named list. The capture tool deliberately has NONE.
+_KNOWN_FASTFOLLOW_DEAD: dict[str, frozenset[str]] = {
+    "warpline_change_list": frozenset(
+        {"base_ref", "head_ref", "filters", "sort_by", "sort_order", "cursor",
+         "include_next_actions"}
+    ),
+    "warpline_entity_timeline_get": frozenset(
+        {"filters", "sort_by", "sort_order", "cursor"}
+    ),
+    "warpline_entity_churn_count_get": frozenset({"cursor"}),
+    "warpline_impact_radius_get": frozenset({"filters", "sort_by", "sort_order", "cursor"}),
+    "warpline_reverify_worklist_get": frozenset(
+        {"filters", "sort_by", "sort_order", "group_by", "cursor", "include_federation"}
+    ),
+    "warpline_edge_snapshot_capture": frozenset(),
+}
+
+
+def assert_inputschema_consumed() -> None:
+    """Fail closed if any advertised inputSchema field is unaccounted-for.
+
+    Every advertised field must be EITHER consumed by the handler (honored or
+    loudly rejected — declared in ``_HANDLER_CONSUMES``) OR a named fast-follow
+    placeholder (``_KNOWN_FASTFOLLOW_DEAD``). A field in neither set is silent
+    dead input — the exact defect PDR-0023 kills — and halts startup. A declared
+    field absent from the schema is stale handler/schema drift and also halts.
+    Run at import time and re-asserted by the contract test.
+    """
+
+    for spec in TOOL_SPECS:
+        endorsed = spec["endorsed"]
+        advertised = frozenset(spec["inputSchema"]["properties"].keys())
+        consumed = _HANDLER_CONSUMES.get(endorsed)
+        assert consumed is not None, f"no consumed-field declaration for tool {endorsed!r}"
+        known_dead = _KNOWN_FASTFOLLOW_DEAD.get(endorsed, frozenset())
+        accounted = consumed | known_dead
+        for name in (endorsed, spec["shim"]):
+            unaccounted = advertised - accounted
+            assert not unaccounted, (
+                f"{name}: inputSchema advertises field(s) {sorted(unaccounted)} that the handler "
+                "neither honors, rejects, nor tracks as a named fast-follow — silent DEAD INPUT "
+                "(PDR-0023 honesty invariant)"
+            )
+            ghost = consumed - advertised
+            assert not ghost, (
+                f"{name}: handler declares consumed field(s) {sorted(ghost)} not in the "
+                "frozen inputSchema — stale handler/schema drift"
+            )
+
+
+# Fail closed at module import (server startup) — never ship advertise-and-ignore.
+assert_inputschema_consumed()
 
 
 def _tool_result(id_value: Any, envelope: dict[str, Any]) -> dict[str, Any]:

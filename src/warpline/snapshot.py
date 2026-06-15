@@ -50,6 +50,8 @@ def capture_edge_snapshot(
     commit_sha: str | None = None,
     client: NeighborhoodClient | None,
     source_version: str,
+    scope_locators: set[str] | None = None,
+    max_entities: int | None = None,
 ) -> dict[str, Any]:
     repo_id = store.ensure_repo(repo)
     resolved_commit = _resolve_commit(repo, commit_sha)
@@ -65,6 +67,7 @@ def capture_edge_snapshot(
             "completeness": "SKIPPED",
             "entities": 0,
             "edges": 0,
+            "capped": False,
             "enrichment": {"edges": "skipped"},
         }
 
@@ -74,10 +77,21 @@ def capture_edge_snapshot(
         locator = row.get("locator")
         key_id = row.get("id")
         if isinstance(locator, str) and isinstance(key_id, int):
+            # changed_only scope: only capture edges for the referenced entities.
+            if scope_locators is not None and locator not in scope_locators:
+                continue
             aliases = _entity_aliases(locator, row.get("sei"))
             for alias in aliases:
                 entity_id_to_key_id[alias] = key_id
             query_entities.append((locator, aliases[0]))
+
+    # max_entities: cap the queried set and downgrade completeness — a capped
+    # capture is a partial graph and must NOT report itself FULL (PDR-0023).
+    query_entities.sort()
+    capped = max_entities is not None and len(query_entities) > max_entities
+    if capped:
+        query_entities = query_entities[:max_entities]
+
     snapshot_id = store.create_edge_snapshot(
         repo_id=repo_id,
         commit_sha=resolved_commit,
@@ -89,7 +103,7 @@ def capture_edge_snapshot(
 
     edge_count = 0
     failures: list[dict[str, str]] = []
-    for locator, query_entity in sorted(query_entities):
+    for locator, query_entity in query_entities:
         try:
             neighborhood = client.neighborhood(query_entity)
             edges = edges_from_neighborhood(neighborhood)
@@ -112,8 +126,10 @@ def capture_edge_snapshot(
             )
             edge_count += 1
 
-    completeness = "DELTA" if failures else "FULL"
-    if failures:
+    # A capped capture is structurally partial: it is missing entities it knows
+    # exist. Treat that exactly like a per-entity failure — DELTA, not FULL.
+    completeness = "DELTA" if (failures or capped) else "FULL"
+    if failures or capped:
         store.create_edge_snapshot(
             repo_id=repo_id,
             commit_sha=resolved_commit,
@@ -132,7 +148,8 @@ def capture_edge_snapshot(
         "entities": len(query_entities),
         "edges": edge_count,
         "failed_entities": failures,
-        "enrichment": {"edges": "partial" if failures else "present"},
+        "capped": capped,
+        "enrichment": {"edges": "partial" if (failures or capped) else "present"},
     }
 
 

@@ -87,4 +87,8 @@ def test_reverify_response_fixture_carries_honesty_fields() -> None:
     assert data["completeness"] in {"FULL", "DELTA", "NO_SNAPSHOT", "SKIPPED"}
     assert "staleness" in data
     assert "items" in data
+    # PDR-0023: the resolve join is interrogable — every changed ref lands in
+    # exactly one of resolved/unresolved, never silently dropped.
+    assert isinstance(data["resolved"], list)
+    assert isinstance(data["unresolved"], list)
     assert data["next_actions"] == {"filigree": []}
