@@ -163,7 +163,7 @@ def test_v1_db_opened_by_v2_client_migrates_and_old_rows_read_null(
     assert "detected_context" not in cols_before
 
     with WarplineStore.open(db) as store:
-        assert store.schema_version() == 2
+        assert store.schema_version() == 3
         row = store.conn.execute(
             "SELECT detected_branch, detected_head_sha, detected_at, detected_context "
             "FROM change_events WHERE commit_sha='deadbeef'"

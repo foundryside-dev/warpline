@@ -50,6 +50,67 @@ def _optional_sei_client(
     }
 
 
+def _co_change_payload(
+    repo: Path,
+    *,
+    sei: str | None,
+    locator: str | None,
+    entity_key_id: int | None,
+    min_count: int,
+) -> dict[str, object]:
+    """Compose the ``co-change`` read surface (NON-FROZEN/internal Track A).
+
+    Resolves the requested entity to a warpline-local ``entity_key_id`` (by
+    explicit id, SEI, or locator), then lists its co-change partners. Each
+    partner carries an honest ``enrichment.sei`` state per the closed vocab:
+    ``present`` when the partner's SEI resolved, ``absent`` when it is still NULL
+    (``sei:null`` — minted before loomweave resolved it). The graph is keyed on
+    warpline-local ids; the SEI is joined, never minted.
+    """
+
+    from warpline.coupling import classify_confidence
+
+    with WarplineStore.open(default_store_path(repo)) as store:
+        key_id: int | None = entity_key_id
+        if key_id is None:
+            if sei is not None:
+                row = store.resolve_ref(repo, "sei", sei)
+            elif locator is not None:
+                row = store.resolve_ref(repo, "locator", locator)
+            else:
+                return {
+                    "schema": "warpline.coupling.partners.v1",
+                    "error": "one of --sei / --locator / --entity-key-id is required",
+                    "partners": [],
+                }
+            if row is None:
+                return {
+                    "schema": "warpline.coupling.partners.v1",
+                    "error": "entity not found",
+                    "partners": [],
+                }
+            key_id = int(str(row["id"]))
+        partners = store.co_change_partners(repo, key_id, min_count=min_count)
+
+    enriched: list[dict[str, object]] = []
+    for partner in partners:
+        partner_sei = partner.get("sei")
+        co_count = partner["co_change_count"]
+        assert isinstance(co_count, int)
+        enriched.append(
+            {
+                **partner,
+                "confidence": classify_confidence(co_count),
+                "enrichment": {"sei": "present" if partner_sei is not None else "absent"},
+            }
+        )
+    return {
+        "schema": "warpline.coupling.partners.v1",
+        "entity_key_id": key_id,
+        "partners": enriched,
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="warpline")
     parser.add_argument("--version", action="store_true", help="print version and exit")
@@ -118,6 +179,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reresolve_parser.add_argument("--loomweave-command", default="loomweave")
     reresolve_parser.add_argument("--json", action="store_true")
+
+    # NON-FROZEN/internal verbs (Rung 2 Track A). Neither is one of the six
+    # frozen v1 MCP tools; both are read-only advisory surfaces over the
+    # warpline-owned co-change graph.
+    rebuild_coupling = sub.add_parser(
+        "rebuild-coupling",
+        help="Rebuild the co-change coupling graph from change_events (idempotent).",
+    )
+    rebuild_coupling.add_argument("--repo", type=Path, default=Path("."))
+    rebuild_coupling.add_argument("--json", action="store_true")
+
+    co_change = sub.add_parser(
+        "co-change",
+        help="List temporal co-change partners of an entity (read-only advisory).",
+    )
+    co_change.add_argument("--repo", type=Path, default=Path("."))
+    co_change.add_argument("--sei")
+    co_change.add_argument("--locator")
+    co_change.add_argument("--entity-key-id", type=int)
+    co_change.add_argument("--min-count", type=int, default=2)
+    co_change.add_argument("--json", action="store_true")
 
     loomweave_probe = sub.add_parser("loomweave-probe")
     loomweave_probe.add_argument("--repo", type=Path, default=Path("."))
@@ -280,6 +362,22 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report, sort_keys=True) if args.json else report)
         return 0
         payload = LoomweaveProbe(repo=args.repo, command=args.loomweave_command).probe()
+        print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
+        return 0
+    if args.command == "rebuild-coupling":
+        with WarplineStore.open(default_store_path(args.repo)) as store:
+            report = store.rebuild_co_change_pairs(args.repo)
+        out: dict[str, object] = {"schema": "warpline.coupling.rebuild.v1", **report}
+        print(json.dumps(out, sort_keys=True) if args.json else json.dumps(out, indent=2))
+        return 0
+    if args.command == "co-change":
+        payload = _co_change_payload(
+            args.repo,
+            sei=args.sei,
+            locator=args.locator,
+            entity_key_id=args.entity_key_id,
+            min_count=args.min_count,
+        )
         print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
         return 0
     if args.command == "changed":

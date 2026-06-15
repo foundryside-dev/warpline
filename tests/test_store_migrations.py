@@ -42,9 +42,10 @@ def test_fresh_db_lands_at_highest_known_version(tmp_path: Path) -> None:
     db = tmp_path / "warpline.db"
     with WarplineStore.open(db) as store:
         assert store.schema_version() == store_mod.HIGHEST_KNOWN_VERSION
-    # As of Rung 1b the highest known version is 2 (anchor columns).
+    # As of Rung 2 Track A the highest known version is 3 (co_change_pairs;
+    # v2 anchor columns + v3 co-change graph).
     assert _user_version(db) == store_mod.HIGHEST_KNOWN_VERSION
-    assert store_mod.HIGHEST_KNOWN_VERSION == 2
+    assert store_mod.HIGHEST_KNOWN_VERSION == 3
 
 
 def test_connection_pragmas_are_hardened(tmp_path: Path) -> None:
@@ -128,7 +129,7 @@ def test_user_version_zero_with_divergent_meta_adopts_and_warns(tmp_path: Path) 
     raw.close()
 
     with WarplineStore.open(db) as store:
-        # Adopted 5 from meta; 5 > highest known (2), so it is also flagged ahead.
+        # Adopted 5 from meta; 5 > highest known (3), so it is also flagged ahead.
         assert store.schema_version() == 5
     codes = _health_codes(db)
     assert "MIGRATION_META_RECONCILE" in codes

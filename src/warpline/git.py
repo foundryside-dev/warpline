@@ -175,6 +175,10 @@ def backfill(
     for sha in _commits(repo, since=since):
         meta = _commit_meta(repo, sha)
         store.upsert_commit(repo_id, meta)
+        # M7: accumulate the commit's changed entity ids across the FULL
+        # path+locator loop, then derive co-change pairs ONCE per commit so the
+        # >30 fan-out cap is per-commit, not per-locator.
+        commit_key_ids: set[int] = set()
         for status, path in _name_status(repo, sha):
             for locator in _locators_for_path(repo, sha, path):
                 sei = _sei_for_locator(sei_client, locator)
@@ -189,6 +193,10 @@ def backfill(
                     actor=meta["author"],
                     changed_at=meta["authored_at"],
                 )
+                commit_key_ids.add(key_id)
+        store.update_co_change_pairs(
+            repo_id, sha, commit_key_ids, changed_at=meta["authored_at"]
+        )
         count += 1
     return {"commits": count, "sei": sei_stats}
 
@@ -208,6 +216,9 @@ def ingest_commit(
     anchor = _detect_anchor(repo)
     changed = 0
     sei_stats = {"resolved": 0, "absent": 0}
+    # M7: accumulate the commit's changed entity ids across the FULL path+locator
+    # loop; derive co-change pairs ONCE after the loop (per-commit fan-out cap).
+    commit_key_ids: set[int] = set()
     for status, path in _name_status(repo, resolved):
         for locator in _locators_for_path(repo, resolved, path):
             sei = _sei_for_locator(sei_client, locator)
@@ -231,5 +242,9 @@ def ingest_commit(
                 detected_at=anchor.detected_at,
                 detected_context=anchor.context,
             )
+            commit_key_ids.add(key_id)
             changed += 1
+    store.update_co_change_pairs(
+        repo_id, resolved, commit_key_ids, changed_at=meta["authored_at"]
+    )
     return {"commit": resolved, "changes": changed, "sei": sei_stats}

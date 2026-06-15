@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
@@ -14,6 +15,13 @@ logger = logging.getLogger(__name__)
 # ``RETURNING`` clause (store.py), first available in SQLite 3.35.0. No migration
 # in this project drops a column, so the floor is RETURNING, not ALTER … DROP COLUMN.
 _MIN_SQLITE_VERSION = (3, 35, 0)
+
+# R8/M7 co-change fan-out cap. A commit touching MORE than this many distinct
+# entities skips pair generation entirely: when everything changes together the
+# pairwise coupling signal is near zero and O(n^2) pair writes are pure noise.
+# The cap is applied per-commit (the caller accumulates ids across the full
+# path+locator loop and calls update_co_change_pairs once per commit, M7).
+_CO_CHANGE_FANOUT_CAP = 30
 
 # After Rung 1a, ``SCHEMA`` DDL is FROZEN. All schema changes (added columns,
 # new tables) go through ``MIGRATIONS`` — never by editing ``SCHEMA``. ``SCHEMA``
@@ -152,11 +160,50 @@ def _migrate_v2_anchor_columns(conn: sqlite3.Connection) -> None:
     conn.execute("ALTER TABLE change_events ADD COLUMN detected_context TEXT")
 
 
+def _migrate_v3_co_change_pairs(conn: sqlite3.Connection) -> None:
+    """v3 (Rung 2 Track A): temporal co-change coupling graph.
+
+    ``co_change_pairs`` records, for each unordered pair of warpline-local
+    ``entity_key_id``s, how many times they changed together in the same commit
+    — a co-occurrence fact warpline OWNS (derived from its own ``change_events``),
+    not a mirror of any sibling. Pairs are stored canonically (``a < b``) so each
+    unordered pair has exactly one row.
+
+    Per-entity totals are NOT denormalized here: they come from ``change_events``
+    aggregation at read time (``co_change_partners``). If read cost ever demands
+    it, denormalized ``total_a``/``total_b`` columns are an additive later
+    migration — the co-change read cost note in the plan.
+
+    SEI-orthogonality: the table keys on ``entity_key_id`` integers only and mints
+    no identifier; the SEI is joined from ``entity_keys`` at read time, never
+    stored here.
+    """
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS co_change_pairs (
+          repo_id          TEXT NOT NULL,
+          entity_key_id_a  INTEGER NOT NULL,
+          entity_key_id_b  INTEGER NOT NULL,
+          co_change_count  INTEGER NOT NULL,
+          last_co_change   TEXT,
+          last_commit_sha  TEXT,
+          PRIMARY KEY (repo_id, entity_key_id_a, entity_key_id_b)
+        )
+        """
+    )
+
+
 # Ordered, forward-only migrations. Each step's ``version`` is strictly greater
 # than the previous. v2 (anchor columns) lands in Rung 1b; v3 (co_change_pairs)
 # in Rung 2 Track A.
+#
+# Migration-ordering gate (B5): v3 MUST NOT precede v2 on disk — a DB opened in
+# the gap would land at user_version=3 and permanently skip v2. The ordered list
+# is the enforcement: v2 always runs before v3 for any DB below 2.
 MIGRATIONS: list[Migration] = [
     Migration(version=2, apply=_migrate_v2_anchor_columns),
+    Migration(version=3, apply=_migrate_v3_co_change_pairs),
 ]
 
 # Highest schema version this build knows how to produce. Equals the base
@@ -769,6 +816,233 @@ class WarplineStore:
             "last": row["last_changed_at"] if row is not None else None,
             "last_actor": last_actor,
         }
+
+    def update_co_change_pairs(
+        self,
+        repo_id: str,
+        commit_sha: str,
+        entity_key_ids: set[int] | list[int],
+        changed_at: str | None = None,
+    ) -> dict[str, int | str]:
+        """Upsert co-change pairs for one commit's changed entity set (Track A).
+
+        Returns a small report dict: ``{"pairs": <written>, ...}``. Three honest
+        early-return shapes carry their reason so the caller and tests can assert
+        them without inspecting health_log:
+
+        - kill-switch (B4): ``WARPLINE_COCHANGE`` set to a falsy/zero value →
+          ``{"pairs": 0, "skipped": "kill_switch"}``; NO rows written, no health
+          event. A pathological repo opts out without a code change.
+        - high fan-out (R8/M7): more than ``_CO_CHANGE_FANOUT_CAP`` (30) changed
+          entities in one commit → ``{"pairs": 0, "skipped": "high_fanout",
+          "entities": <n>}``; records ``coupling_skipped=high_fanout`` via
+          ``log_health`` (a count is also returned). High-fanout commits carry
+          near-zero coupling signal, so generating O(n^2) pairs is pure noise.
+        - too few entities (no pair possible) → ``{"pairs": 0}``.
+
+        All writes are fail-soft: a SQLite error records ``coupling_write_failed``
+        to health_log and returns ``{"pairs": 0, "error": ...}`` rather than
+        propagating — co-change derivation NEVER blocks ingest.
+
+        The ``>30`` cap is applied to the WHOLE commit's entity set (M7): the
+        caller accumulates ids across the full path+locator loop and calls this
+        ONCE per commit, so the cap is per-commit, not per-locator.
+        """
+
+        # B4 kill-switch: WARPLINE_COCHANGE set to "0"/"false"/"no"/"" → skip.
+        raw = os.environ.get("WARPLINE_COCHANGE")
+        if raw is not None and raw.strip().lower() in {"0", "false", "no", "off", ""}:
+            return {"pairs": 0, "skipped": "kill_switch"}
+
+        ids = sorted(set(int(i) for i in entity_key_ids))
+        n = len(ids)
+        if n > _CO_CHANGE_FANOUT_CAP:
+            # R8: record the skip both to health_log AND in the return dict.
+            self.conn.execute(
+                "INSERT INTO health_log(repo_id, code, message) VALUES (?, ?, ?)",
+                (
+                    repo_id,
+                    "coupling_skipped",
+                    f"high_fanout: {n} entities in commit {commit_sha} (cap "
+                    f"{_CO_CHANGE_FANOUT_CAP})",
+                ),
+            )
+            self.conn.commit()
+            return {"pairs": 0, "skipped": "high_fanout", "entities": n}
+        if n < 2:
+            return {"pairs": 0}
+
+        # Import locally to keep coupling.py a pure leaf (it never imports store,
+        # avoiding an import cycle); store -> coupling is the one-way edge.
+        from warpline.coupling import derive_pairs_from_commit
+
+        pairs = derive_pairs_from_commit(ids)
+        try:
+            for key_a, key_b in pairs:
+                self.conn.execute(
+                    """
+                    INSERT INTO co_change_pairs(
+                      repo_id, entity_key_id_a, entity_key_id_b,
+                      co_change_count, last_co_change, last_commit_sha
+                    ) VALUES (?, ?, ?, 1, ?, ?)
+                    ON CONFLICT(repo_id, entity_key_id_a, entity_key_id_b) DO UPDATE SET
+                      co_change_count = co_change_count + 1,
+                      last_co_change  = excluded.last_co_change,
+                      last_commit_sha = excluded.last_commit_sha
+                    """,
+                    (repo_id, key_a, key_b, changed_at, commit_sha),
+                )
+            self.conn.commit()
+        except sqlite3.Error as exc:  # fail-soft: never block ingest (R8)
+            self.conn.execute(
+                "INSERT INTO health_log(repo_id, code, message) VALUES (?, ?, ?)",
+                (repo_id, "coupling_write_failed", f"{commit_sha}: {exc}"),
+            )
+            self.conn.commit()
+            return {"pairs": 0, "error": str(exc)}
+        return {"pairs": len(pairs)}
+
+    def co_change_partners(
+        self,
+        repo: Path,
+        entity_key_id: int,
+        min_count: int = 2,
+    ) -> list[dict[str, object]]:
+        """Co-change partners of one entity, with SEI joined at read time.
+
+        Returns rows ordered by descending ``co_change_count``. Each row carries
+        the partner's ``entity_key_id``, ``locator``, ``sei`` (NULL when the
+        partner key was minted before its SEI resolved — honest ``sei:null``),
+        ``co_change_count``, ``coupling_rate`` (suppressed to None below the
+        sample floor), ``sample_size`` (the partner's total churn), and
+        ``last_co_change``.
+
+        Read-cost note: ``coupling_rate`` requires the partner's per-entity total
+        churn, computed here with one COUNT per partner via ``churn_for_entity``.
+        This is acceptable for the bounded partner lists this surface returns; if
+        a hot path ever needs it at scale, denormalized totals are an additive
+        later migration (no schema break).
+        """
+
+        repo_id = self._repo_id(repo)
+        rows = self.conn.execute(
+            """
+            SELECT CASE WHEN entity_key_id_a = :id THEN entity_key_id_b
+                        ELSE entity_key_id_a END AS partner_id,
+                   co_change_count, last_co_change
+              FROM co_change_pairs
+             WHERE repo_id = :repo
+               AND (entity_key_id_a = :id OR entity_key_id_b = :id)
+               AND co_change_count >= :min_count
+             ORDER BY co_change_count DESC, partner_id
+            """,
+            {"repo": repo_id, "id": int(entity_key_id), "min_count": int(min_count)},
+        ).fetchall()
+
+        from warpline.coupling import coupling_rate
+
+        partners: list[dict[str, object]] = []
+        for row in rows:
+            partner_id = int(row["partner_id"])
+            key = self.conn.execute(
+                "SELECT locator, sei FROM entity_keys WHERE id = ? AND repo_id = ?",
+                (partner_id, repo_id),
+            ).fetchone()
+            if key is None:
+                continue
+            total = int(str(self.churn_for_entity(repo, partner_id)["churn_count"]))
+            co_count = int(row["co_change_count"])
+            partners.append(
+                {
+                    "entity_key_id": partner_id,
+                    "locator": key["locator"],
+                    "sei": key["sei"],
+                    "co_change_count": co_count,
+                    "coupling_rate": coupling_rate(co_count, total),
+                    "sample_size": total,
+                    "last_co_change": row["last_co_change"],
+                }
+            )
+        return partners
+
+    def co_change_commit_groups(self, repo: Path) -> list[dict[str, object]]:
+        """Group ``change_events`` by commit into ``(commit_sha, [entity_key_id])``.
+
+        The rebuild input: one group per commit, deduplicated entity ids, ordered
+        by commit for deterministic, interruptible rebuilds. ``last_co_change`` is
+        the commit's max ``changed_at`` so a rebuilt row carries the same recency
+        marker as the live ingest path.
+        """
+
+        repo_id = self._repo_id(repo)
+        rows = self.conn.execute(
+            """
+            SELECT commit_sha, entity_key_id, MAX(changed_at) AS changed_at
+              FROM change_events
+             WHERE repo_id = ?
+             GROUP BY commit_sha, entity_key_id
+             ORDER BY commit_sha
+            """,
+            (repo_id,),
+        ).fetchall()
+        groups: dict[str, dict[str, object]] = {}
+        for row in rows:
+            sha = str(row["commit_sha"])
+            group = groups.setdefault(
+                sha, {"commit_sha": sha, "entity_key_ids": [], "changed_at": None}
+            )
+            ids = group["entity_key_ids"]
+            assert isinstance(ids, list)
+            ids.append(int(row["entity_key_id"]))
+            changed = row["changed_at"]
+            if changed is not None and (
+                group["changed_at"] is None or str(changed) > str(group["changed_at"])
+            ):
+                group["changed_at"] = changed
+        return list(groups.values())
+
+    def clear_co_change_pairs(self, repo: Path) -> None:
+        """Drop all co-change rows for a repo (rebuild precondition)."""
+
+        repo_id = self._repo_id(repo)
+        self.conn.execute("DELETE FROM co_change_pairs WHERE repo_id = ?", (repo_id,))
+        self.conn.commit()
+
+    def rebuild_co_change_pairs(self, repo: Path) -> dict[str, int]:
+        """Rebuild the whole co-change graph from ``change_events`` (idempotent).
+
+        Clears existing rows, then replays every commit group through the same
+        ``update_co_change_pairs`` path the live ingest uses — so a rebuild and an
+        incremental ingest converge to identical counts. Interruptible: each
+        commit group commits independently; a re-run is idempotent because the
+        clear precedes the replay.
+
+        Returns ``{"commits": <groups replayed>, "pairs": <rows written>,
+        "skipped": <high-fanout/kill-switch commits>}``.
+        """
+
+        repo_id = self.ensure_repo(repo)
+        self.clear_co_change_pairs(repo)
+        commits = 0
+        pairs = 0
+        skipped = 0
+        for group in self.co_change_commit_groups(repo):
+            ids = group["entity_key_ids"]
+            assert isinstance(ids, list)
+            report = self.update_co_change_pairs(
+                repo_id,
+                str(group["commit_sha"]),
+                ids,
+                changed_at=(
+                    None if group["changed_at"] is None else str(group["changed_at"])
+                ),
+            )
+            commits += 1
+            written = report.get("pairs", 0)
+            pairs += int(written) if isinstance(written, int) else 0
+            if report.get("skipped"):
+                skipped += 1
+        return {"commits": commits, "pairs": pairs, "skipped": skipped}
 
     def log_health(self, repo: Path, code: str, message: str) -> None:
         repo_id = self.ensure_repo(repo)

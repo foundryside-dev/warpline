@@ -23,7 +23,7 @@ def test_default_store_path_honors_explicit_store_dir(tmp_path: Path) -> None:
 def test_store_initializes_schema(tmp_path: Path) -> None:
     db = tmp_path / "warpline.db"
     with WarplineStore.open(db) as store:
-        assert store.schema_version() == 2
+        assert store.schema_version() == 3
 
 
 def test_store_writes_nested_gitignore_that_ignores_runtime_db(tmp_path: Path) -> None:
@@ -32,7 +32,7 @@ def test_store_writes_nested_gitignore_that_ignores_runtime_db(tmp_path: Path) -
     subprocess.run(["git", "init"], cwd=repo, check=True, text=True, capture_output=True)
 
     with WarplineStore.open(default_store_path(repo)) as store:
-        assert store.schema_version() == 2
+        assert store.schema_version() == 3
 
     gitignore = repo / ".weft" / "warpline" / ".gitignore"
     assert gitignore.exists()
