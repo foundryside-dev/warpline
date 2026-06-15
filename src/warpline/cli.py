@@ -14,6 +14,63 @@ from warpline.productization import read_productization_decision
 from warpline.reresolve import sweep_reresolve_sei
 from warpline.store import WarplineStore, default_store_path
 
+# NON-FROZEN/internal COP frame kinds (Rung 2 Track D demo verb). Mirrors
+# cop.FRAME_KINDS; kept local so the parser builds without importing cop at
+# module import time (cop pulls in the federation consults).
+_COP_FRAME_KINDS = ("rev_range", "time_window", "sei", "branch_sha", "edit")
+
+
+def _cop_payload(
+    repo: Path,
+    *,
+    frame: str,
+    rev_range: str | None,
+    since: str | None,
+    until: str | None,
+    sei: str | None,
+    branch: str | None,
+    sha: str | None,
+    rev: str,
+) -> dict[str, object]:
+    """Compose the NON-FROZEN/internal ``cop`` demo payload (Track D).
+
+    Builds the frame spec from CLI args, resolves it through ``cop.resolve_frame``,
+    and composes the temporal COP with NO federation transports wired (members
+    are honestly ``disabled``/dark — the demo asserts the resolution + degradation
+    path, not live sibling reads). The PUBLIC COP tool surface is
+    interface-pending; this is a demo runner, not a frozen contract.
+    """
+
+    from warpline.cop import compose_temporal_cop, resolve_frame
+
+    frame_spec: dict[str, object] = {"kind": frame}
+    if frame == "rev_range":
+        frame_spec["rev_range"] = rev_range
+    elif frame == "time_window":
+        frame_spec["since"] = since
+        frame_spec["until"] = until
+    elif frame == "sei":
+        frame_spec["sei"] = sei
+    elif frame == "branch_sha":
+        frame_spec["branch"] = branch
+        frame_spec["sha"] = sha
+        if rev_range is not None:
+            frame_spec["rev_range"] = rev_range
+    elif frame == "edit":
+        frame_spec["rev"] = rev
+
+    with WarplineStore.open(default_store_path(repo)) as store:
+        items, frame_echo, warnings = resolve_frame(store, repo, frame_spec)
+        cop = compose_temporal_cop(items, frame_echo)
+    return {
+        "schema": "warpline.cop.demo.v1",
+        "non_frozen": True,
+        "items": items,
+        "warnings": warnings,
+        **cop,
+    }
+
+
 # install/doctor component flags -> component keys
 _INSTALL_FLAGS = {
     "claude_code": "claude-code",
@@ -201,6 +258,30 @@ def build_parser() -> argparse.ArgumentParser:
     co_change.add_argument("--min-count", type=int, default=2)
     co_change.add_argument("--json", action="store_true")
 
+    # NON-FROZEN/internal verb (Rung 2 Track D). NOT one of the six frozen v1
+    # MCP tools and NOT in the frozen tool set/glossary; the PUBLIC COP tool
+    # surface is interface-pending. This verb exists only so the temporal-COP
+    # internals (cop.py) run end-to-end for the reconstruction demo.
+    cop_parser = sub.add_parser(
+        "cop",
+        help="(NON-FROZEN/internal) Temporal COP over a change frame — demo surface.",
+    )
+    cop_parser.add_argument("--repo", type=Path, default=Path("."))
+    cop_parser.add_argument(
+        "--frame",
+        choices=list(_COP_FRAME_KINDS),
+        default="rev_range",
+        help="frame kind: rev_range | time_window | sei | branch_sha | edit",
+    )
+    cop_parser.add_argument("--rev-range")
+    cop_parser.add_argument("--since")
+    cop_parser.add_argument("--until")
+    cop_parser.add_argument("--sei")
+    cop_parser.add_argument("--branch")
+    cop_parser.add_argument("--sha")
+    cop_parser.add_argument("--rev", default="HEAD")
+    cop_parser.add_argument("--json", action="store_true")
+
     loomweave_probe = sub.add_parser("loomweave-probe")
     loomweave_probe.add_argument("--repo", type=Path, default=Path("."))
     loomweave_probe.add_argument("--command", dest="loomweave_command", default="loomweave")
@@ -377,6 +458,20 @@ def main(argv: list[str] | None = None) -> int:
             locator=args.locator,
             entity_key_id=args.entity_key_id,
             min_count=args.min_count,
+        )
+        print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
+        return 0
+    if args.command == "cop":
+        payload = _cop_payload(
+            args.repo,
+            frame=args.frame,
+            rev_range=args.rev_range,
+            since=args.since,
+            until=args.until,
+            sei=args.sei,
+            branch=args.branch,
+            sha=args.sha,
+            rev=args.rev,
         )
         print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
         return 0

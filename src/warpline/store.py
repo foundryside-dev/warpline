@@ -662,17 +662,32 @@ class WarplineStore:
         self.conn.commit()
 
     def list_change_events(
-        self, repo: Path, commit_shas: set[str] | None = None
+        self,
+        repo: Path,
+        commit_shas: set[str] | None = None,
+        *,
+        since: str | None = None,
+        until: str | None = None,
     ) -> list[dict[str, object]]:
+        # ``since``/``until`` (inclusive, on ``changed_at``) are the time_window
+        # frame's store support (M4): the COP ``time_window`` frame kind resolves
+        # change events by author-time bounds. Additive optional kwargs — existing
+        # callers (commit-sha or unfiltered reads) are unaffected.
         repo_id = self._repo_id(repo)
         params: list[object] = [repo_id]
-        commit_filter = ""
+        clauses = ""
         if commit_shas is not None:
             if not commit_shas:
                 return []
             placeholders = ",".join("?" for _ in commit_shas)
-            commit_filter = f" AND ce.commit_sha IN ({placeholders})"
+            clauses += f" AND ce.commit_sha IN ({placeholders})"
             params.extend(sorted(commit_shas))
+        if since is not None:
+            clauses += " AND ce.changed_at >= ?"
+            params.append(since)
+        if until is not None:
+            clauses += " AND ce.changed_at <= ?"
+            params.append(until)
         rows = self.conn.execute(
             f"""
             SELECT ce.id AS change_event_id, ce.commit_sha, ce.path, ce.change_kind,
@@ -683,7 +698,7 @@ class WarplineStore:
               FROM change_events ce
               JOIN entity_keys ek ON ek.id = ce.entity_key_id
              WHERE ce.repo_id = ?
-             {commit_filter}
+             {clauses}
              ORDER BY ce.changed_at, ce.id
             """,
             params,
