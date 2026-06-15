@@ -201,7 +201,11 @@ TOOL_SPECS = [
             "group_by": {"type": "string"},
             "limit": {"type": "integer"},
             "cursor": {"type": ["string", "null"]},
-            "include_federation": {"type": "boolean"},
+            # include_federation REMOVED (G2): it is a cross-member SEAM affordance
+            # (it would make warpline consult OTHER members). Under the
+            # hub-blesses-every-seam ruling it is NOT wired in an intra-member
+            # strike, and an advertised-but-dead field is forbidden, so the
+            # advertisement is withdrawn until the hub authors+blesses that seam.
         },
         required=["repo"],
         metadata=_READ_META_LW,
@@ -320,15 +324,35 @@ def _limit_arg(args: dict[str, Any], default: int) -> int:
 
 
 # --------------------------------------------------------------------------- handlers
+def _opt_str(args: dict[str, Any], key: str) -> str | None:
+    value = args.get(key)
+    return value if isinstance(value, str) else None
+
+
 def _h_change_list(args: dict[str, Any]) -> dict[str, Any]:
     return commands.change_list(
-        _repo_arg(args), args.get("rev_range"), limit=_limit_arg(args, 50)
+        _repo_arg(args),
+        args.get("rev_range"),
+        base_ref=_opt_str(args, "base_ref"),
+        head_ref=_opt_str(args, "head_ref"),
+        filters=args.get("filters"),
+        sort_by=_opt_str(args, "sort_by"),
+        sort_order=_opt_str(args, "sort_order"),
+        cursor=args.get("cursor"),
+        include_next_actions=bool(args.get("include_next_actions", True)),
+        limit=_limit_arg(args, 50),
     )
 
 
 def _h_timeline(args: dict[str, Any]) -> dict[str, Any]:
     return commands.entity_timeline(
-        _repo_arg(args), _entity_ref_arg(args), limit=_limit_arg(args, 50)
+        _repo_arg(args),
+        _entity_ref_arg(args),
+        filters=args.get("filters"),
+        sort_by=_opt_str(args, "sort_by"),
+        sort_order=_opt_str(args, "sort_order"),
+        cursor=args.get("cursor"),
+        limit=_limit_arg(args, 50),
     )
 
 
@@ -343,6 +367,7 @@ def _h_churn(args: dict[str, Any]) -> dict[str, Any]:
         window=args.get("window"),
         sort_by=str(args.get("sort_by", "churn_count")),
         sort_order=str(args.get("sort_order", "desc")),
+        cursor=args.get("cursor"),
         limit=_limit_arg(args, 100),
     )
 
@@ -354,6 +379,10 @@ def _h_impact(args: dict[str, Any]) -> dict[str, Any]:
         _depth_arg(args),
         rev_range=args.get("rev_range"),
         changed_refs=args.get("changed_refs"),
+        filters=args.get("filters"),
+        sort_by=_opt_str(args, "sort_by"),
+        sort_order=_opt_str(args, "sort_order"),
+        cursor=args.get("cursor"),
         limit=_limit_arg(args, 100),
     )
 
@@ -365,6 +394,11 @@ def _h_reverify(args: dict[str, Any]) -> dict[str, Any]:
         _depth_arg(args),
         rev_range=args.get("rev_range"),
         changed_refs=args.get("changed_refs"),
+        filters=args.get("filters"),
+        sort_by=_opt_str(args, "sort_by"),
+        sort_order=_opt_str(args, "sort_order"),
+        group_by=_opt_str(args, "group_by"),
+        cursor=args.get("cursor"),
         limit=_limit_arg(args, 100),
     )
 
@@ -399,20 +433,62 @@ for _spec, _handler in zip(
 # The startup assertion below fails closed if any advertised field is neither
 # consumed nor explicitly tracked as a named fast-follow, so a NEW
 # advertise-and-ignore field can never silently ship.
+# Every advertised list-ergonomics knob is now wired (G2): filters / sort_by /
+# sort_order / cursor / group_by are honored by the handler (or loudly rejected
+# on a bad value) for every read tool that advertises them. base_ref/head_ref
+# (an explicit two-ended rev range) and include_next_actions are likewise wired.
 _HANDLER_CONSUMES: dict[str, frozenset[str]] = {
-    "warpline_change_list": frozenset({"repo", "rev_range", "limit"}),
-    "warpline_entity_timeline_get": frozenset({"repo", "entity_ref", "entity", "limit"}),
+    "warpline_change_list": frozenset(
+        {
+            "repo",
+            "rev_range",
+            "base_ref",
+            "head_ref",
+            "filters",
+            "sort_by",
+            "sort_order",
+            "cursor",
+            "include_next_actions",
+            "limit",
+        }
+    ),
+    "warpline_entity_timeline_get": frozenset(
+        {"repo", "entity_ref", "entity", "filters", "sort_by", "sort_order", "cursor", "limit"}
+    ),
     "warpline_entity_churn_count_get": frozenset(
-        {"repo", "entity_refs", "window", "sort_by", "sort_order", "limit"}
+        {"repo", "entity_refs", "window", "sort_by", "sort_order", "cursor", "limit"}
     ),
     "warpline_impact_radius_get": frozenset(
-        {"repo", "rev_range", "changed_refs", "changed_entity_key_ids", "depth", "limit"}
+        {
+            "repo",
+            "rev_range",
+            "changed_refs",
+            "changed_entity_key_ids",
+            "depth",
+            "filters",
+            "sort_by",
+            "sort_order",
+            "cursor",
+            "limit",
+        }
     ),
     "warpline_reverify_worklist_get": frozenset(
-        {"repo", "rev_range", "changed_refs", "changed_entity_key_ids", "depth", "limit"}
+        {
+            "repo",
+            "rev_range",
+            "changed_refs",
+            "changed_entity_key_ids",
+            "depth",
+            "filters",
+            "sort_by",
+            "sort_order",
+            "group_by",
+            "cursor",
+            "limit",
+        }
     ),
-    # capture honors or loudly rejects EVERY advertised field (the P0 this strike
-    # closes): no fast-follow placeholders remain on this tool.
+    # capture honors or loudly rejects EVERY advertised field: no fast-follow
+    # placeholders remain on this tool.
     "warpline_edge_snapshot_capture": frozenset(
         {
             "repo",
@@ -427,24 +503,18 @@ _HANDLER_CONSUMES: dict[str, frozenset[str]] = {
     ),
 }
 
-# Advertised-but-not-yet-wired fields, tracked explicitly per the frozen
-# interface-lock §6 FAST-FOLLOW rows (filters/sort/cursor population). These are
-# documented-dead, not silently-dead: an agent can audit exactly which knobs are
-# inert today, and the assertion still catches any field that is neither
-# consumed nor on this named list. The capture tool deliberately has NONE.
+# The fast-follow placeholder set has shrunk to EMPTY for every tool (G2): there
+# is no advertised-but-dead field left in warpline. The cross-member seam knob
+# include_federation was REMOVED from the schema (not parked here as dead) and
+# returns only when the hub authors+blesses that seam. The assertion below still
+# catches any NEW advertise-and-ignore field — the structural guarantee, not a
+# tolerance list.
 _KNOWN_FASTFOLLOW_DEAD: dict[str, frozenset[str]] = {
-    "warpline_change_list": frozenset(
-        {"base_ref", "head_ref", "filters", "sort_by", "sort_order", "cursor",
-         "include_next_actions"}
-    ),
-    "warpline_entity_timeline_get": frozenset(
-        {"filters", "sort_by", "sort_order", "cursor"}
-    ),
-    "warpline_entity_churn_count_get": frozenset({"cursor"}),
-    "warpline_impact_radius_get": frozenset({"filters", "sort_by", "sort_order", "cursor"}),
-    "warpline_reverify_worklist_get": frozenset(
-        {"filters", "sort_by", "sort_order", "group_by", "cursor", "include_federation"}
-    ),
+    "warpline_change_list": frozenset(),
+    "warpline_entity_timeline_get": frozenset(),
+    "warpline_entity_churn_count_get": frozenset(),
+    "warpline_impact_radius_get": frozenset(),
+    "warpline_reverify_worklist_get": frozenset(),
     "warpline_edge_snapshot_capture": frozenset(),
 }
 

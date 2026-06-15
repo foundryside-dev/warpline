@@ -7,6 +7,13 @@ from typing import Any
 
 from warpline.envelope import build_envelope, enrichment_state
 from warpline.errors import BadRevisionError, InvalidChangedRefsError
+from warpline.listing import (
+    apply_filters,
+    apply_group_by,
+    apply_overflow,
+    apply_page,
+    apply_sort,
+)
 from warpline.loomweave import LoomweaveMcpClient, LoomweaveProbe
 from warpline.propagation import blast_radius as compute_blast_radius
 from warpline.refs import (
@@ -125,6 +132,15 @@ def _page(limit: int) -> dict[str, Any]:
     return {"limit": limit, "next_cursor": None, "has_more": False}
 
 
+def _filters_echo(filters: Any) -> dict[str, Any]:
+    """Echo the caller's active filters into the query block (empty when none),
+    so the response is self-describing about what scoping was applied."""
+
+    if not isinstance(filters, dict):
+        return {}
+    return {k: v for k, v in filters.items() if v is not None}
+
+
 def _as_int(value: object) -> int:
     assert isinstance(value, int)
     return value
@@ -218,13 +234,40 @@ def _unresolved_warnings(unresolved: list[dict[str, Any]]) -> list[str]:
 # ---------------------------------------------------------------------------
 # warpline_change_list — warpline.change_list.v1
 # ---------------------------------------------------------------------------
+def _rev_range_from_refs(
+    rev_range: str | None, base_ref: str | None, head_ref: str | None
+) -> str | None:
+    """Resolve the effective rev range. ``base_ref``/``head_ref`` are an explicit
+    two-ended alternative to ``rev_range`` (``base..head``); supplying both forms
+    is a conflict the caller must resolve, not a silently-dropped knob."""
+
+    if base_ref is None and head_ref is None:
+        return rev_range
+    if rev_range is not None:
+        raise BadRevisionError(
+            "pass either rev_range OR base_ref/head_ref, not both",
+            rejected_field="rev_range",
+        )
+    base = base_ref if base_ref is not None else "HEAD"
+    head = head_ref if head_ref is not None else "HEAD"
+    return f"{base}..{head}"
+
+
 def change_list(
     repo: Path,
     rev_range: str | None = None,
     *,
+    base_ref: str | None = None,
+    head_ref: str | None = None,
+    filters: Any = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    cursor: Any = None,
+    include_next_actions: bool = True,
     limit: int = 50,
 ) -> dict[str, Any]:
-    commit_shas = _rev_range_commits(repo, rev_range)
+    effective_range = _rev_range_from_refs(rev_range, base_ref, head_ref)
+    commit_shas = _rev_range_commits(repo, effective_range)
     with WarplineStore.open(default_store_path(repo)) as store:
         events = store.list_change_events(repo, commit_shas=commit_shas)
         items: list[dict[str, Any]] = []
@@ -232,7 +275,7 @@ def change_list(
         seen_refs: set[tuple[str, str]] = set()
         key_ids: list[int] = []
         has_sei = False
-        for event in events[:limit]:
+        for event in events:
             path = str(event.get("path"))
             view = entity_view(event, include_key_id=True, path=path)
             if view["sei"]:
@@ -256,38 +299,52 @@ def change_list(
             if isinstance(key_id, int) and key_id not in key_ids:
                 key_ids.append(key_id)
 
+        # Filter → sort → overflow-bound → page: the list-ergonomics pipeline,
+        # each step honoring its advertised knob or rejecting it loudly.
+        items = apply_filters(items, tool="warpline_change_list", filters=filters)
+        items = apply_sort(
+            items, tool="warpline_change_list", sort_by=sort_by, sort_order=sort_order
+        )
+        items, overflow_warnings, overflow = apply_overflow(
+            items, repo=repo, tool="warpline_change_list", schema=SCHEMA_CHANGE_LIST
+        )
+        items, page = apply_page(items, limit=limit, cursor=cursor)
+
         data = {
             "items": items,
             "changed_refs": changed_refs,
-            "page": {"limit": limit, "next_cursor": None, "has_more": len(events) > limit},
+            "overflow": overflow,
+            "page": page,
         }
-        next_actions = {
-            "warpline_reverify_worklist_get": {
-                "tool": "warpline_reverify_worklist_get",
-                "arguments": {
-                    "repo": str(repo),
-                    "changed_entity_key_ids": key_ids,
-                    "changed_refs": changed_refs,
-                    "depth": 2,
+        next_actions: dict[str, Any] = {}
+        if include_next_actions:
+            next_actions = {
+                "warpline_reverify_worklist_get": {
+                    "tool": "warpline_reverify_worklist_get",
+                    "arguments": {
+                        "repo": str(repo),
+                        "changed_entity_key_ids": key_ids,
+                        "changed_refs": changed_refs,
+                        "depth": 2,
+                    },
                 },
-            },
-            "warpline_impact_radius_get": {
-                "tool": "warpline_impact_radius_get",
-                "arguments": {
-                    "repo": str(repo),
-                    "changed_entity_key_ids": key_ids,
-                    "changed_refs": changed_refs,
-                    "depth": 2,
+                "warpline_impact_radius_get": {
+                    "tool": "warpline_impact_radius_get",
+                    "arguments": {
+                        "repo": str(repo),
+                        "changed_entity_key_ids": key_ids,
+                        "changed_refs": changed_refs,
+                        "depth": 2,
+                    },
                 },
-            },
-        }
+            }
         query = {
             "repo": str(repo),
             "tool": "warpline_change_list",
-            "arguments": {"rev_range": rev_range},
-            "filters": {},
-            "sort": {"by": "changed_at", "order": "asc"},
-            "page": {"limit": limit, "cursor": None},
+            "arguments": {"rev_range": effective_range},
+            "filters": _filters_echo(filters),
+            "sort": {"by": sort_by or "changed_at", "order": sort_order or "asc"},
+            "page": {"limit": limit, "cursor": cursor},
         }
         return build_envelope(
             SCHEMA_CHANGE_LIST,
@@ -295,6 +352,7 @@ def change_list(
             data=data,
             enrichment=enrichment_state(sei="present" if has_sei else "absent"),
             next_actions=next_actions,
+            warnings=overflow_warnings,
         )
 
 
@@ -305,6 +363,10 @@ def entity_timeline(
     repo: Path,
     entity: Any,
     *,
+    filters: Any = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    cursor: Any = None,
     limit: int = 50,
     rename_feed: RenameFeed | None = None,
 ) -> dict[str, Any]:
@@ -350,16 +412,24 @@ def entity_timeline(
                 "changed_at": row.get("changed_at"),
                 "path": row.get("path"),
             }
-            for row in rows[:limit]
+            for row in rows
         ]
-        data = {"entity": entity_out, "items": items, "page": _page(limit)}
+        items = apply_filters(items, tool="warpline_entity_timeline_get", filters=filters)
+        items = apply_sort(
+            items, tool="warpline_entity_timeline_get", sort_by=sort_by, sort_order=sort_order
+        )
+        items, overflow_warnings, overflow = apply_overflow(
+            items, repo=repo, tool="warpline_entity_timeline_get", schema=SCHEMA_ENTITY_TIMELINE
+        )
+        items, page = apply_page(items, limit=limit, cursor=cursor)
+        data = {"entity": entity_out, "items": items, "overflow": overflow, "page": page}
         query = {
             "repo": str(repo),
             "tool": "warpline_entity_timeline_get",
             "arguments": {"entity_ref": ref},
-            "filters": {},
-            "sort": {"by": "changed_at", "order": "asc"},
-            "page": {"limit": limit, "cursor": None},
+            "filters": _filters_echo(filters),
+            "sort": {"by": sort_by or "changed_at", "order": sort_order or "asc"},
+            "page": {"limit": limit, "cursor": cursor},
         }
         return build_envelope(
             SCHEMA_ENTITY_TIMELINE,
@@ -369,6 +439,7 @@ def entity_timeline(
                 sei="present" if entity_out["sei"] else "absent",
                 governance="present" if rename_feed is not None else "unavailable",
             ),
+            warnings=overflow_warnings,
         )
 
 
@@ -382,6 +453,7 @@ def entity_churn_count(
     window: dict[str, Any] | None = None,
     sort_by: str = "churn_count",
     sort_order: str = "desc",
+    cursor: Any = None,
     limit: int = 100,
 ) -> dict[str, Any]:
     refs = parse_changed_refs(entity_refs)
@@ -422,24 +494,34 @@ def entity_churn_count(
             items.sort(key=lambda i: str(i["entity"].get("sei") or ""), reverse=reverse)
         else:
             items.sort(key=lambda i: int(i["churn_count"]), reverse=reverse)
+        window_out = {"since": since, "until": until, "rev_range": rev_range}
+        items, overflow_warnings, overflow = apply_overflow(
+            items,
+            repo=repo,
+            tool="warpline_entity_churn_count_get",
+            schema=SCHEMA_ENTITY_CHURN_COUNT,
+        )
+        items, page = apply_page(items, limit=limit, cursor=cursor)
         data = {
-            "items": items[:limit],
-            "window": {"since": since, "until": until, "rev_range": rev_range},
-            "page": _page(limit),
+            "items": items,
+            "window": window_out,
+            "overflow": overflow,
+            "page": page,
         }
         query = {
             "repo": str(repo),
             "tool": "warpline_entity_churn_count_get",
-            "arguments": {"entity_refs": refs, "window": data["window"]},
+            "arguments": {"entity_refs": refs, "window": window_out},
             "filters": {},
             "sort": {"by": sort_by, "order": sort_order},
-            "page": {"limit": limit, "cursor": None},
+            "page": {"limit": limit, "cursor": cursor},
         }
         return build_envelope(
             SCHEMA_ENTITY_CHURN_COUNT,
             query=query,
             data=data,
             enrichment=enrichment_state(sei="present" if has_sei else "absent"),
+            warnings=overflow_warnings,
         )
 
 
@@ -490,6 +572,10 @@ def impact_radius(
     *,
     rev_range: str | None = None,
     changed_refs: Any = None,
+    filters: Any = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    cursor: Any = None,
     limit: int = 100,
 ) -> dict[str, Any]:
     refs = parse_changed_refs(changed_refs)
@@ -505,6 +591,15 @@ def impact_radius(
         changed, affected = _enrich_blast(store, repo, result)
         completeness = result["completeness"]
         staleness = result["staleness"]
+        # The affected set is the list surface (changed is the seed, kept whole).
+        affected = apply_filters(affected, tool="warpline_impact_radius_get", filters=filters)
+        affected = apply_sort(
+            affected, tool="warpline_impact_radius_get", sort_by=sort_by, sort_order=sort_order
+        )
+        affected, overflow_warnings, overflow = apply_overflow(
+            affected, repo=repo, tool="warpline_impact_radius_get", schema=SCHEMA_IMPACT_RADIUS
+        )
+        affected, page = apply_page(affected, limit=limit, cursor=cursor)
         data = {
             "completeness": completeness,
             "staleness": staleness,
@@ -512,7 +607,8 @@ def impact_radius(
             "unresolved": unresolved,
             "changed": changed,
             "affected": affected,
-            "page": _page(limit),
+            "overflow": overflow,
+            "page": page,
         }
         query = {
             "repo": str(repo),
@@ -522,9 +618,9 @@ def impact_radius(
                 "changed_entity_key_ids": key_ids,
                 "depth": depth,
             },
-            "filters": {},
-            "sort": {"by": "depth", "order": "asc"},
-            "page": {"limit": limit, "cursor": None},
+            "filters": _filters_echo(filters),
+            "sort": {"by": sort_by or "depth", "order": sort_order or "asc"},
+            "page": {"limit": limit, "cursor": cursor},
         }
         return build_envelope(
             SCHEMA_IMPACT_RADIUS,
@@ -535,6 +631,7 @@ def impact_radius(
                 _completeness_warnings(completeness)
                 + _staleness_warnings(completeness, staleness)
                 + _unresolved_warnings(unresolved)
+                + overflow_warnings
             ),
         )
 
@@ -557,6 +654,11 @@ def reverify_worklist(
     *,
     rev_range: str | None = None,
     changed_refs: Any = None,
+    filters: Any = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    group_by: str | None = None,
+    cursor: Any = None,
     limit: int = 100,
     work_client: WorkClient | None = None,
 ) -> dict[str, Any]:
@@ -580,14 +682,27 @@ def reverify_worklist(
             staleness=staleness,
             work_client=work_client,
         )
+        items = apply_filters(items, tool="warpline_reverify_worklist_get", filters=filters)
+        items = apply_sort(
+            items, tool="warpline_reverify_worklist_get", sort_by=sort_by, sort_order=sort_order
+        )
+        # group_by buckets the FULL filtered+sorted list (the grouped view is a
+        # complete projection, not a page); the flat list still paginates.
+        grouped = apply_group_by(items, tool="warpline_reverify_worklist_get", group_by=group_by)
+        items, overflow_warnings, overflow = apply_overflow(
+            items, repo=repo, tool="warpline_reverify_worklist_get", schema=SCHEMA_REVERIFY_WORKLIST
+        )
+        items, page = apply_page(items, limit=limit, cursor=cursor)
         data = {
             "completeness": completeness,
             "staleness": staleness,
             "resolved": resolved,
             "unresolved": unresolved,
-            "items": items[:limit],
+            "items": items,
+            "grouped": grouped,
             "next_actions": {"filigree": filigree_candidates},
-            "page": _page(limit),
+            "overflow": overflow,
+            "page": page,
         }
         if work_client is None:
             work_state = "unavailable"
@@ -601,9 +716,10 @@ def reverify_worklist(
                 "changed_entity_key_ids": key_ids,
                 "depth": depth,
             },
-            "filters": {},
-            "sort": {"by": "priority", "order": "asc"},
-            "page": {"limit": limit, "cursor": None},
+            "filters": _filters_echo(filters),
+            "sort": {"by": sort_by or "priority", "order": sort_order or "asc"},
+            "group_by": group_by or "none",
+            "page": {"limit": limit, "cursor": cursor},
         }
         return build_envelope(
             SCHEMA_REVERIFY_WORKLIST,
@@ -618,6 +734,7 @@ def reverify_worklist(
                 _completeness_warnings(completeness)
                 + _staleness_warnings(completeness, staleness)
                 + _unresolved_warnings(unresolved)
+                + overflow_warnings
             ),
         )
 
