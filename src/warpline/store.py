@@ -1,10 +1,29 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 from types import TracebackType
+from typing import NamedTuple
 
+logger = logging.getLogger(__name__)
+
+# Minimum bundled-SQLite floor. Justification: ``create_edge_snapshot`` uses the
+# ``RETURNING`` clause (store.py), first available in SQLite 3.35.0. No migration
+# in this project drops a column, so the floor is RETURNING, not ALTER … DROP COLUMN.
+_MIN_SQLITE_VERSION = (3, 35, 0)
+
+# After Rung 1a, ``SCHEMA`` DDL is FROZEN. All schema changes (added columns,
+# new tables) go through ``MIGRATIONS`` — never by editing ``SCHEMA``. ``SCHEMA``
+# remains only the fresh-DB base-table definition (idempotent ``IF NOT EXISTS``).
+#
+# Fresh-DB WAL note: ``executescript(SCHEMA)`` runs ``PRAGMA journal_mode=WAL``
+# via an implicit-commit ``executescript`` — intentional, and deliberately
+# OUTSIDE the per-migration ``BEGIN IMMEDIATE`` pattern (Python's executescript
+# issues an implicit COMMIT, so the migration runner uses ``conn.execute`` per
+# statement instead; see ``_run_migrations``).
 SCHEMA = """
 PRAGMA journal_mode=WAL;
 CREATE TABLE IF NOT EXISTS meta (
@@ -93,6 +112,32 @@ tmp/
 """
 
 
+class Migration(NamedTuple):
+    """One ordered, forward-only schema migration.
+
+    ``apply`` runs its ``conn.execute(...)`` statements INSIDE an already-open
+    ``BEGIN IMMEDIATE`` transaction owned by the runner; it must NOT call
+    ``executescript`` (which would issue an implicit COMMIT and break the
+    transaction's atomicity, R3) and must NOT commit/begin itself.
+    """
+
+    version: int
+    apply: Callable[[sqlite3.Connection], None]
+
+
+# Ordered, forward-only migrations. Each step's ``version`` is strictly greater
+# than the previous. v2 (anchor columns) lands in Rung 1b; v3 (co_change_pairs)
+# in Rung 2 Track A. In Rung 1a this list is empty: the runner is established
+# but the highest known version is 1 (the base ``SCHEMA``).
+MIGRATIONS: list[Migration] = []
+
+# Highest schema version this build knows how to produce. Equals the base
+# ``SCHEMA`` (1) plus the max migration version. A DB whose ``user_version``
+# exceeds this was written by a newer build — reads stay safe (additive-only
+# history), so the runner WARNS rather than failing.
+HIGHEST_KNOWN_VERSION = max((m.version for m in MIGRATIONS), default=1)
+
+
 def default_store_path(repo: Path, base_dir: Path | None = None) -> Path:
     root = repo.resolve()
     state = base_dir or root / ".weft" / "warpline"
@@ -105,17 +150,148 @@ def _ensure_store_gitignore(store_dir: Path) -> None:
         gitignore.write_text(WARPLINE_GITIGNORE_CONTENTS, encoding="utf-8")
 
 
+# Sentinel repo_id for store-level (repo-agnostic) health events written during
+# open()/migration, where no repo Path is in scope.
+_STORE_HEALTH_REPO_ID = "__store__"
+
+
+def _meta_schema_version(conn: sqlite3.Connection) -> str | None:
+    row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+    return None if row is None else str(row["value"])
+
+
+def _store_health(conn: sqlite3.Connection, code: str, message: str) -> None:
+    """Record a store-level health event (open/migration path, no repo in scope)."""
+
+    conn.execute(
+        "INSERT INTO health_log(repo_id, code, message) VALUES (?, ?, ?)",
+        (_STORE_HEALTH_REPO_ID, code, message),
+    )
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    """Apply ordered forward-only migrations from ``user_version`` to HIGHEST_KNOWN.
+
+    Atomicity (R3): each step runs inside its own explicit ``BEGIN IMMEDIATE`` /
+    ``COMMIT``; the step's ``apply`` callable uses ``conn.execute`` only (never
+    ``executescript``). ``PRAGMA user_version`` and the ``meta`` row are updated
+    in the SAME transaction. Concurrent ``open()`` calls block on the RESERVED
+    lock (busy_timeout), then re-read ``user_version`` and skip applied steps.
+    """
+
+    current = int(conn.execute("PRAGMA user_version").fetchone()[0])
+
+    # M9 / legacy reconcile: a DB created before the runner existed has
+    # user_version==0 but a meta.schema_version row. Adopt the meta value so we
+    # do not re-run already-applied schema. The expected legacy value is '1'
+    # (base SCHEMA); any other value is from a divergent/newer writer — warn and
+    # adopt it before running steps with version > that.
+    if current == 0:
+        meta_version = _meta_schema_version(conn)
+        if meta_version is None or meta_version == "1":
+            # Fresh DB or pre-runner legacy v1: the expected baseline. The base
+            # SCHEMA always inserts schema_version='1', so meta_version is None
+            # only on a corrupt/empty meta — treat as baseline 1 either way.
+            current = 1
+        else:
+            try:
+                current = int(meta_version)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "warpline store: non-integer meta.schema_version %r with "
+                    "user_version=0; adopting baseline version 1",
+                    meta_version,
+                )
+                _store_health(
+                    conn,
+                    "MIGRATION_META_UNPARSEABLE",
+                    f"meta.schema_version={meta_version!r} not an int; adopted 1",
+                )
+                current = 1
+            else:
+                logger.warning(
+                    "warpline store: user_version=0 but meta.schema_version=%s "
+                    "(expected '1'); adopting %d before running later migrations",
+                    meta_version,
+                    current,
+                )
+                _store_health(
+                    conn,
+                    "MIGRATION_META_RECONCILE",
+                    f"user_version=0, meta.schema_version={meta_version}; adopted {current}",
+                )
+        # Persist the reconciled version once so the next open() short-circuits.
+        conn.execute(f"PRAGMA user_version = {current}")
+        conn.commit()
+
+    if current > HIGHEST_KNOWN_VERSION:
+        # Newer writer touched this DB. Reads are still safe (additive-only
+        # history); warn, record to health_log, and proceed without applying.
+        logger.warning(
+            "warpline store: on-disk schema version %d exceeds highest known %d; "
+            "this build is older than the writer — reads remain safe",
+            current,
+            HIGHEST_KNOWN_VERSION,
+        )
+        _store_health(
+            conn,
+            "SCHEMA_VERSION_AHEAD",
+            f"on-disk version {current} > highest known {HIGHEST_KNOWN_VERSION}",
+        )
+        conn.commit()
+        return
+
+    for migration in MIGRATIONS:
+        if migration.version <= current:
+            continue
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            # Re-read under the RESERVED lock: a concurrent writer may have
+            # applied this (or a later) step while we blocked on busy_timeout.
+            locked_version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+            if migration.version <= locked_version:
+                conn.execute("COMMIT")
+                current = locked_version
+                continue
+            migration.apply(conn)
+            conn.execute(f"PRAGMA user_version = {migration.version}")
+            conn.execute(
+                "UPDATE meta SET value = ? WHERE key = 'schema_version'",
+                (str(migration.version),),
+            )
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        current = migration.version
+
+
 class WarplineStore:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
     @classmethod
     def open(cls, path: Path) -> WarplineStore:
+        if sqlite3.sqlite_version_info < _MIN_SQLITE_VERSION:
+            have = ".".join(str(p) for p in sqlite3.sqlite_version_info)
+            need = ".".join(str(p) for p in _MIN_SQLITE_VERSION)
+            raise RuntimeError(
+                f"warpline requires SQLite >= {need} (RETURNING clause); "
+                f"this Python is bundled with SQLite {have}"
+            )
         path.parent.mkdir(parents=True, exist_ok=True)
         _ensure_store_gitignore(path.parent)
         conn = sqlite3.connect(path)
         conn.row_factory = sqlite3.Row
+        # Connection hardening. journal_mode=WAL is also set by SCHEMA below;
+        # foreign_keys/busy_timeout/synchronous are per-connection pragmas.
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 5000")
+        conn.execute("PRAGMA synchronous = NORMAL")
+        # Fresh-DB base tables (idempotent IF NOT EXISTS). The implicit-commit
+        # executescript is intentional here and outside the migration pattern.
         conn.executescript(SCHEMA)
+        _run_migrations(conn)
         return cls(conn)
 
     def __enter__(self) -> WarplineStore:
