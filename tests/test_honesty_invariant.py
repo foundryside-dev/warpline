@@ -11,37 +11,16 @@ startup assertion proves it.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import commit as _commit
+from conftest import init_repo as _init_repo
 
 from warpline import commands
 from warpline.errors import InvalidChangedRefsError
 from warpline.mcp import assert_inputschema_consumed
 from warpline.store import WarplineStore, default_store_path
-
-
-def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", *args], cwd=repo, check=True, text=True, stdout=subprocess.PIPE
-    ).stdout.strip()
-
-
-def _init_repo(tmp_path: Path) -> Path:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    _git(repo, "init")
-    _git(repo, "config", "user.email", "agent@example.test")
-    _git(repo, "config", "user.name", "Agent")
-    return repo
-
-
-def _commit(repo: Path, name: str, body: str) -> str:
-    (repo / name).write_text(body, encoding="utf-8")
-    _git(repo, "add", name)
-    _git(repo, "commit", "-m", f"write {name}")
-    return _git(repo, "rev-parse", "HEAD")
 
 
 # --------------------------------------------------------------------------- (a)
