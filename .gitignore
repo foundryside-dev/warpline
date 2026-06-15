@@ -11,3 +11,12 @@ __pycache__/
 # wardline scan artifacts
 findings.jsonl
 findings-rust.jsonl
+
+# Developer config / local tooling — not part of the solution
+.claude/
+.agents/
+
+# Local tool/federation config — not part of the solution
+.mcp.json
+loomweave.yaml
+weft.toml

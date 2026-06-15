@@ -45,6 +45,18 @@ packages = ["src/warpline"]
 artifacts = ["src/warpline/skills/**"]
 
 [tool.hatch.build.targets.sdist]
+# Scope the sdist to the package + metadata. Without an exclusive allow-list,
+# hatchling vacuums the whole working tree (only honoring the root .gitignore)
+# and auto-harvests LICENSE/README files out of site/node_modules — a 38 MB
+# sdist. `only-include` (not `include`, which is additive) restricts it.
+only-include = [
+    "src/warpline",
+    "tests",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "pyproject.toml",
+]
 artifacts = ["src/warpline/skills/**"]
 
 [tool.pytest.ini_options]
