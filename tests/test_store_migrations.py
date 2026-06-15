@@ -1,10 +1,11 @@
 """Rung 1a: ordered migration runner + PRAGMA hardening.
 
 The base SCHEMA is FROZEN after Rung 1a; all schema change lands via the ordered
-``MIGRATIONS`` list. In Rung 1a that list is empty (highest known version == 1),
-so the runner is exercised here against synthetic migrations monkeypatched onto
-the module — proving ordering, atomicity, idempotence, and concurrency safety
-without coupling these tests to a not-yet-shipped v2.
+``MIGRATIONS`` list. As of Rung 1b the real list carries v2 (anchor columns), so
+the highest known version is 2. The runner mechanics (ordering, atomicity,
+idempotence, concurrency safety) are still exercised against synthetic
+migrations monkeypatched onto the module so they stay decoupled from any single
+shipped version.
 """
 
 from __future__ import annotations
@@ -41,9 +42,9 @@ def test_fresh_db_lands_at_highest_known_version(tmp_path: Path) -> None:
     db = tmp_path / "warpline.db"
     with WarplineStore.open(db) as store:
         assert store.schema_version() == store_mod.HIGHEST_KNOWN_VERSION
-    # In Rung 1a the highest known version is 1; user_version is reconciled to it.
+    # As of Rung 1b the highest known version is 2 (anchor columns).
     assert _user_version(db) == store_mod.HIGHEST_KNOWN_VERSION
-    assert store_mod.HIGHEST_KNOWN_VERSION == 1
+    assert store_mod.HIGHEST_KNOWN_VERSION == 2
 
 
 def test_connection_pragmas_are_hardened(tmp_path: Path) -> None:
@@ -55,8 +56,9 @@ def test_connection_pragmas_are_hardened(tmp_path: Path) -> None:
         assert str(store.conn.execute("PRAGMA journal_mode").fetchone()[0]).lower() == "wal"
 
 
-def test_legacy_v1_db_reconciles_user_version_on_open(tmp_path: Path) -> None:
-    """A pre-runner DB (base tables + meta='1', user_version=0) reconciles to 1."""
+def test_legacy_v1_db_reconciles_then_upgrades_on_open(tmp_path: Path) -> None:
+    """A pre-runner DB (base tables + meta='1', user_version=0) reconciles to 1
+    then the real v2 anchor migration upgrades it to the highest known version."""
     db = tmp_path / "warpline.db"
     # Simulate a DB written before the runner existed: SCHEMA applied (so
     # meta.schema_version='1') but user_version never set.
@@ -67,8 +69,16 @@ def test_legacy_v1_db_reconciles_user_version_on_open(tmp_path: Path) -> None:
     assert _user_version(db) == 0
 
     with WarplineStore.open(db) as store:
-        assert store.schema_version() == 1
-    assert _user_version(db) == 1
+        assert store.schema_version() == store_mod.HIGHEST_KNOWN_VERSION
+        # The v2 anchor columns are present after the upgrade.
+        cols = {r["name"] for r in store.conn.execute("PRAGMA table_info(change_events)")}
+        assert {
+            "detected_branch",
+            "detected_head_sha",
+            "detected_at",
+            "detected_context",
+        } <= cols
+    assert _user_version(db) == store_mod.HIGHEST_KNOWN_VERSION
     # No reconcile-warn rows for the expected legacy baseline.
     assert "MIGRATION_META_RECONCILE" not in _health_codes(db)
 
@@ -99,8 +109,8 @@ def test_user_version_ahead_of_known_warns_to_health_log_and_does_not_fail(
     raw.close()
 
     with WarplineStore.open(db) as store:
-        # schema_version() reads meta (still 1); the runner did not fail.
-        assert store.schema_version() == 1
+        # schema_version() reads meta (still the highest known); runner did not fail.
+        assert store.schema_version() == store_mod.HIGHEST_KNOWN_VERSION
         # Reads remain available.
         store.ensure_repo(tmp_path)
     assert _user_version(db) == 99  # untouched
@@ -118,7 +128,7 @@ def test_user_version_zero_with_divergent_meta_adopts_and_warns(tmp_path: Path) 
     raw.close()
 
     with WarplineStore.open(db) as store:
-        # Adopted 5 from meta; 5 > highest known (1), so it is also flagged ahead.
+        # Adopted 5 from meta; 5 > highest known (2), so it is also flagged ahead.
         assert store.schema_version() == 5
     codes = _health_codes(db)
     assert "MIGRATION_META_RECONCILE" in codes
@@ -194,27 +204,31 @@ def test_concurrent_open_does_not_double_apply(
     apply_count = 0
     lock = threading.Lock()
 
-    def _v2(conn: sqlite3.Connection) -> None:
+    def _v3(conn: sqlite3.Connection) -> None:
         nonlocal apply_count
         with lock:
             apply_count += 1
         conn.execute("CREATE TABLE IF NOT EXISTS rung1a_concurrent (x INTEGER)")
 
     db = tmp_path / "warpline.db"
-    # Materialize the base schema (user_version=1) WITHOUT the synthetic v2 in
-    # play, so both threads then race the v2 step from an identical baseline.
+    # Materialize the real base schema (lands at the highest known version) WITHOUT
+    # the synthetic step in play, so both threads then race a single step above
+    # that baseline from an identical starting version.
     with WarplineStore.open(db) as store:
-        assert store.schema_version() == 1
+        assert store.schema_version() == store_mod.HIGHEST_KNOWN_VERSION
 
-    monkeypatch.setattr(store_mod, "MIGRATIONS", [Migration(2, _v2)])
-    monkeypatch.setattr(store_mod, "HIGHEST_KNOWN_VERSION", 2)
+    synthetic_version = store_mod.HIGHEST_KNOWN_VERSION + 1
+    monkeypatch.setattr(
+        store_mod, "MIGRATIONS", [Migration(synthetic_version, _v3)]
+    )
+    monkeypatch.setattr(store_mod, "HIGHEST_KNOWN_VERSION", synthetic_version)
 
     errors: list[BaseException] = []
 
     def _worker() -> None:
         try:
             with WarplineStore.open(db) as store:
-                assert store.schema_version() == 2
+                assert store.schema_version() == synthetic_version
         except BaseException as exc:  # noqa: BLE001 - surfaced via errors list
             errors.append(exc)
 
@@ -225,6 +239,6 @@ def test_concurrent_open_does_not_double_apply(
         t.join()
 
     assert errors == []
-    assert _user_version(db) == 2
+    assert _user_version(db) == synthetic_version
     # The migration body ran exactly once across both opens.
     assert apply_count == 1

@@ -125,11 +125,39 @@ class Migration(NamedTuple):
     apply: Callable[[sqlite3.Connection], None]
 
 
+def _migrate_v2_anchor_columns(conn: sqlite3.Connection) -> None:
+    """v2 (Rung 1b): working-context anchor columns on ``change_events``.
+
+    The anchor identifies the **detection act** (a change episode, verb-moment),
+    orthogonal to the SEI (entity identity, noun) — so it lives on
+    ``change_events``, never on ``entity_keys``. All columns are NULLable with no
+    default (O(1) metadata-only ALTERs): a backfilled or pre-v2 row reads NULL,
+    which the honesty invariant surfaces as ``unavailable`` working-context
+    rather than a clean-looking default.
+
+    - ``detected_branch``    — git symbolic-ref short name; NULL if detached.
+    - ``detected_head_sha``  — HEAD sha AT DETECTION (working context; distinct
+      from ``commit_sha`` = the introducing commit).
+    - ``detected_at``        — ISO-8601 UTC detection timestamp (distinct from
+      ``changed_at`` = author time).
+    - ``detected_context``   — honest E4/M8 signal carrier, one of
+      ``clean`` / ``working_tree_dirty`` / ``detached_head`` (NULL on
+      backfilled/pre-v2 rows). Subsumes the detached-HEAD case so a NULL
+      ``detected_head_sha`` is never overloaded to mean "detached".
+    """
+
+    conn.execute("ALTER TABLE change_events ADD COLUMN detected_branch TEXT")
+    conn.execute("ALTER TABLE change_events ADD COLUMN detected_head_sha TEXT")
+    conn.execute("ALTER TABLE change_events ADD COLUMN detected_at TEXT")
+    conn.execute("ALTER TABLE change_events ADD COLUMN detected_context TEXT")
+
+
 # Ordered, forward-only migrations. Each step's ``version`` is strictly greater
 # than the previous. v2 (anchor columns) lands in Rung 1b; v3 (co_change_pairs)
-# in Rung 2 Track A. In Rung 1a this list is empty: the runner is established
-# but the highest known version is 1 (the base ``SCHEMA``).
-MIGRATIONS: list[Migration] = []
+# in Rung 2 Track A.
+MIGRATIONS: list[Migration] = [
+    Migration(version=2, apply=_migrate_v2_anchor_columns),
+]
 
 # Highest schema version this build knows how to produce. Equals the base
 # ``SCHEMA`` (1) plus the max migration version. A DB whose ``user_version``
@@ -405,13 +433,22 @@ class WarplineStore:
         actor: str,
         changed_at: str,
         hunk_summary: str = "",
+        detected_branch: str | None = None,
+        detected_head_sha: str | None = None,
+        detected_at: str | None = None,
+        detected_context: str | None = None,
     ) -> None:
+        # Working-context anchor (v2) is optional: unsupplied → NULL, which is
+        # backward compatible and reads as ``unavailable`` (never a clean
+        # default). Columns are named explicitly so the additive v2 columns
+        # cannot shift positionally (M10).
         self.conn.execute(
             """
             INSERT OR IGNORE INTO change_events(
               repo_id, entity_key_id, commit_sha, path, change_kind,
-              actor, changed_at, hunk_summary
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              actor, changed_at, hunk_summary,
+              detected_branch, detected_head_sha, detected_at, detected_context
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 repo_id,
@@ -422,6 +459,10 @@ class WarplineStore:
                 actor,
                 changed_at,
                 hunk_summary,
+                detected_branch,
+                detected_head_sha,
+                detected_at,
+                detected_context,
             ),
         )
         self.conn.commit()
@@ -442,6 +483,8 @@ class WarplineStore:
             f"""
             SELECT ce.id AS change_event_id, ce.commit_sha, ce.path, ce.change_kind,
                    ce.actor, ce.changed_at,
+                   ce.detected_branch, ce.detected_head_sha, ce.detected_at,
+                   ce.detected_context,
                    ek.id AS entity_key_id, ek.locator, ek.sei
               FROM change_events ce
               JOIN entity_keys ek ON ek.id = ce.entity_key_id
@@ -459,6 +502,8 @@ class WarplineStore:
             """
             SELECT ce.id AS change_event_id, ce.commit_sha, ce.path, ce.change_kind,
                    ce.actor, ce.changed_at,
+                   ce.detected_branch, ce.detected_head_sha, ce.detected_at,
+                   ce.detected_context,
                    ek.id AS entity_key_id, ek.locator, ek.sei
               FROM change_events ce
               JOIN entity_keys ek ON ek.id = ce.entity_key_id

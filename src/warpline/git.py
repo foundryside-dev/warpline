@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from warpline.locators import python_entity_locators
 from warpline.loomweave import ToolClient, resolve_sei_for_locator
@@ -53,6 +54,61 @@ def _commit_meta(repo: Path, sha: str) -> dict[str, str]:
         "authored_at": authored_at,
         "committed_at": committed_at,
     }
+
+
+class _Anchor(NamedTuple):
+    """Working-context anchor for one detection call (Rung 1b).
+
+    ``branch``/``head_sha`` are git's own values (no minted identifier), and
+    ``detected_at`` is a clock reading; warpline owns only the contract of
+    recording them. ``context`` is the honest E4/M8 signal:
+    ``clean`` / ``working_tree_dirty`` / ``detached_head``.
+    """
+
+    branch: str | None
+    head_sha: str | None
+    detected_at: str
+    context: str
+
+
+def _git_optional(repo: Path, args: list[str]) -> str | None:
+    """Run a git command that is allowed to exit non-zero (returns None then)."""
+
+    result = subprocess.run(
+        ["git", *args], cwd=repo, check=False, text=True, capture_output=True
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def _detect_anchor(repo: Path) -> _Anchor:
+    """Compute the working-context anchor once, at detection time.
+
+    Detached HEAD → ``branch=None`` + ``context='detached_head'``. A dirty work
+    tree → ``context='working_tree_dirty'`` (honest E4 signal; the recorded
+    ``head_sha`` is the committed HEAD, which is stable, but the working tree
+    that produced the detection is not — so the context flags it rather than
+    emitting a false-precise clean anchor). Otherwise ``context='clean'``.
+    """
+
+    detected_at = datetime.now(UTC).isoformat()
+    head_sha = _git_optional(repo, ["rev-parse", "HEAD"])
+    branch = _git_optional(repo, ["symbolic-ref", "--short", "-q", "HEAD"])
+    # ``--untracked-files=no``: a dirty signal means UNCOMMITTED TRACKED changes,
+    # the real "the working tree that produced this detection is unstable" risk
+    # (E4). Untracked files (notably warpline's own ``.weft/warpline/`` runtime
+    # tree) are not part of what was detected and must not flip the signal.
+    dirty = bool(_git_optional(repo, ["status", "--porcelain", "--untracked-files=no"]))
+    if branch is None:
+        context = "detached_head"
+    elif dirty:
+        context = "working_tree_dirty"
+    else:
+        context = "clean"
+    return _Anchor(
+        branch=branch, head_sha=head_sha, detected_at=detected_at, context=context
+    )
 
 
 def _name_status(repo: Path, sha: str) -> list[tuple[str, str]]:
@@ -112,6 +168,10 @@ def backfill(
     repo_id = store.ensure_repo(repo)
     count = 0
     sei_stats = {"resolved": 0, "absent": 0}
+    # B3: backfill is RECONSTRUCTION, not DETECTION — it cannot know the working
+    # context that introduced a historical commit. It therefore passes NO anchor
+    # kwargs, so all four v2 anchor columns stay NULL (reads as ``unavailable``,
+    # not a false clean/detected signal).
     for sha in _commits(repo, since=since):
         meta = _commit_meta(repo, sha)
         store.upsert_commit(repo_id, meta)
@@ -143,6 +203,9 @@ def ingest_commit(
     resolved = _git(repo, ["rev-parse", sha]).strip()
     meta = _commit_meta(repo, resolved)
     store.upsert_commit(repo_id, meta)
+    # Working-context anchor (Rung 1b): the detection act, computed ONCE per
+    # ingest call and threaded onto every change_event it writes.
+    anchor = _detect_anchor(repo)
     changed = 0
     sei_stats = {"resolved": 0, "absent": 0}
     for status, path in _name_status(repo, resolved):
@@ -163,6 +226,10 @@ def ingest_commit(
                 change_kind=_change_kind(status),
                 actor=meta["author"],
                 changed_at=meta["authored_at"],
+                detected_branch=anchor.branch,
+                detected_head_sha=anchor.head_sha,
+                detected_at=anchor.detected_at,
+                detected_context=anchor.context,
             )
             changed += 1
     return {"commit": resolved, "changes": changed, "sei": sei_stats}
