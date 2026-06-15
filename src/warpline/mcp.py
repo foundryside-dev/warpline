@@ -14,6 +14,8 @@ from warpline.errors import (
     MissingRequiredFieldError,
     WarplineError,
 )
+from warpline.federation import WardlineDossierClient
+from warpline.siblings import FiligreeWorkClient
 
 CORE_OUTPUT_SCHEMA = {
     "type": "object",
@@ -201,11 +203,13 @@ TOOL_SPECS = [
             "group_by": {"type": "string"},
             "limit": {"type": "integer"},
             "cursor": {"type": ["string", "null"]},
-            # include_federation REMOVED (G2): it is a cross-member SEAM affordance
-            # (it would make warpline consult OTHER members). Under the
-            # hub-blesses-every-seam ruling it is NOT wired in an intra-member
-            # strike, and an advertised-but-dead field is forbidden, so the
-            # advertisement is withdrawn until the hub authors+blesses that seam.
+            # include_federation RE-ADDED + WIRED (hub-blessed seam): when true,
+            # reverify CONSULTS the reachable members read-only (filigree issues,
+            # wardline findings, legis governance) and merges a federation block
+            # whose per-member entries each carry their OWN weft-reason. A member
+            # with no transport is honestly ``disabled``, never silently dropped —
+            # so this is a kept promise, not a re-advertised-dead field.
+            "include_federation": {"type": "boolean"},
         },
         required=["repo"],
         metadata=_READ_META_LW,
@@ -388,8 +392,17 @@ def _h_impact(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _h_reverify(args: dict[str, Any]) -> dict[str, Any]:
+    repo = _repo_arg(args)
+    include_federation = bool(args.get("include_federation", False))
+    # When the caller asks for federation, build the REAL read-only clients for
+    # the members that have a transport. filigree (entity-association reverse
+    # lookup) and wardline (`dossier` findings) are wired; legis has no per-entity
+    # CLI read transport yet, so legis_client stays None and the federation block
+    # surfaces it as ``disabled`` with a recruiting fix (never faked).
+    work_client = FiligreeWorkClient(repo) if include_federation else None
+    risk_client = WardlineDossierClient(repo) if include_federation else None
     return commands.reverify_worklist(
-        _repo_arg(args),
+        repo,
         _key_ids_arg(args),
         _depth_arg(args),
         rev_range=args.get("rev_range"),
@@ -400,6 +413,10 @@ def _h_reverify(args: dict[str, Any]) -> dict[str, Any]:
         group_by=_opt_str(args, "group_by"),
         cursor=args.get("cursor"),
         limit=_limit_arg(args, 100),
+        work_client=work_client,
+        include_federation=include_federation,
+        risk_client=risk_client,
+        legis_client=None,
     )
 
 
@@ -485,6 +502,7 @@ _HANDLER_CONSUMES: dict[str, frozenset[str]] = {
             "group_by",
             "cursor",
             "limit",
+            "include_federation",
         }
     ),
     # capture honors or loudly rejects EVERY advertised field: no fast-follow
@@ -503,12 +521,13 @@ _HANDLER_CONSUMES: dict[str, frozenset[str]] = {
     ),
 }
 
-# The fast-follow placeholder set has shrunk to EMPTY for every tool (G2): there
-# is no advertised-but-dead field left in warpline. The cross-member seam knob
-# include_federation was REMOVED from the schema (not parked here as dead) and
-# returns only when the hub authors+blesses that seam. The assertion below still
-# catches any NEW advertise-and-ignore field — the structural guarantee, not a
-# tolerance list.
+# The fast-follow placeholder set is EMPTY for every tool: there is no
+# advertised-but-dead field left in warpline. The cross-member seam knob
+# include_federation is now RE-ADDED and WIRED (hub-blessed): reverify consults
+# the reachable members and merges a per-member-weft-reason federation block, so
+# it is a kept promise consumed by the handler, not parked dead here. The
+# assertion below still catches any NEW advertise-and-ignore field — the
+# structural guarantee, not a tolerance list.
 _KNOWN_FASTFOLLOW_DEAD: dict[str, frozenset[str]] = {
     "warpline_change_list": frozenset(),
     "warpline_entity_timeline_get": frozenset(),

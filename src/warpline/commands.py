@@ -7,6 +7,7 @@ from typing import Any
 
 from warpline.envelope import build_envelope, enrichment_state
 from warpline.errors import BadRevisionError, InvalidChangedRefsError
+from warpline.federation import LegisClient, RiskClient, consult_federation
 from warpline.listing import (
     apply_filters,
     apply_group_by,
@@ -661,6 +662,9 @@ def reverify_worklist(
     cursor: Any = None,
     limit: int = 100,
     work_client: WorkClient | None = None,
+    include_federation: bool = False,
+    risk_client: RiskClient | None = None,
+    legis_client: LegisClient | None = None,
 ) -> dict[str, Any]:
     refs = parse_changed_refs(changed_refs)
     with WarplineStore.open(default_store_path(repo)) as store:
@@ -689,6 +693,21 @@ def reverify_worklist(
         # group_by buckets the FULL filtered+sorted list (the grouped view is a
         # complete projection, not a page); the flat list still paginates.
         grouped = apply_group_by(items, tool="warpline_reverify_worklist_get", group_by=group_by)
+        # include_federation (cross-member SEAM, hub-blessed): consult the members
+        # warpline can reach (read-only) over the FULL filtered+sorted worklist —
+        # the federation join is a complete projection, not a page. Each consulted
+        # member's sub-result carries its OWN weft-reason (PDR-0023 mini-L2): a
+        # member with no transport is honestly ``disabled``, never silently dropped.
+        federation = (
+            consult_federation(
+                items,
+                work_client=work_client,
+                risk_client=risk_client,
+                legis_client=legis_client,
+            )
+            if include_federation
+            else None
+        )
         items, overflow_warnings, overflow = apply_overflow(
             items, repo=repo, tool="warpline_reverify_worklist_get", schema=SCHEMA_REVERIFY_WORKLIST
         )
@@ -704,6 +723,8 @@ def reverify_worklist(
             "overflow": overflow,
             "page": page,
         }
+        if federation is not None:
+            data["federation"] = federation
         if work_client is None:
             work_state = "unavailable"
         else:
@@ -719,6 +740,7 @@ def reverify_worklist(
             "filters": _filters_echo(filters),
             "sort": {"by": sort_by or "priority", "order": sort_order or "asc"},
             "group_by": group_by or "none",
+            "include_federation": include_federation,
             "page": {"limit": limit, "cursor": cursor},
         }
         return build_envelope(
@@ -734,9 +756,29 @@ def reverify_worklist(
                 _completeness_warnings(completeness)
                 + _staleness_warnings(completeness, staleness)
                 + _unresolved_warnings(unresolved)
+                + _federation_warnings(federation)
                 + overflow_warnings
             ),
         )
+
+
+def _federation_warnings(federation: dict[str, Any] | None) -> list[str]:
+    """Surface every non-clean per-member federation posture as a FEDERATION
+    warning (in addition to the in-band per-member ``weft_reason``), so a member
+    that is disabled/unreachable/stale is loud in the warnings stream too — never
+    a confident-empty federation block."""
+
+    if not federation:
+        return []
+    warnings: list[str] = []
+    for member, block in federation.get("members", {}).items():
+        wr = block.get("weft_reason", {})
+        klass = wr.get("reason_class")
+        if klass and klass != "clean":
+            warnings.append(
+                f"FEDERATION: {member} is {klass} — {wr.get('cause')} (fix: {wr.get('fix')})"
+            )
+    return warnings
 
 
 # ---------------------------------------------------------------------------

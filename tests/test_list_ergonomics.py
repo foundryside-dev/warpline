@@ -5,9 +5,9 @@ group_by) does what an agent would expect: a sort actually sorts, a cursor
 actually paginates, a filter actually filters, group_by actually groups, and an
 oversized result spills the FULL list to a file at project root with a warning
 rather than silently truncating or flooding the caller. The cross-member seam
-affordance ``include_federation`` is withdrawn from the schema (not wired in an
-intra-member strike) and the inputSchema-consumption guard now covers every tool
-with an EMPTY fast-follow-dead set.
+affordance ``include_federation`` is now RE-ADDED and WIRED (hub-blessed): the
+inputSchema-consumption guard treats it as consumed (not parked dead), so the
+fast-follow-dead set stays EMPTY for every tool.
 """
 
 from __future__ import annotations
@@ -390,14 +390,20 @@ def test_impact_sort_and_filter_on_affected(tmp_path: Path) -> None:
     )
 
 
-# ------------------------------------------------------------------ enforce guard + seam removal
-def test_include_federation_is_no_longer_advertised() -> None:
-    """The cross-member seam knob is REMOVED from the schema (not parked dead)."""
+# ------------------------------------------------------------------ enforce guard + seam wiring
+def test_include_federation_is_advertised_and_consumed() -> None:
+    """The cross-member seam knob is RE-ADDED to the schema AND declared consumed
+    by the handler (a kept promise, not re-advertised-dead)."""
+
+    from warpline import mcp
 
     reverify = next(
         s for s in TOOL_SPECS if s["endorsed"] == "warpline_reverify_worklist_get"
     )
-    assert "include_federation" not in reverify["inputSchema"]["properties"]
+    assert "include_federation" in reverify["inputSchema"]["properties"]
+    assert "include_federation" in mcp._HANDLER_CONSUMES["warpline_reverify_worklist_get"]
+    # ...and it is NOT parked as a dead fast-follow field.
+    assert "include_federation" not in _KNOWN_FASTFOLLOW_DEAD["warpline_reverify_worklist_get"]
 
 
 def test_fastfollow_dead_set_is_empty_for_every_tool() -> None:
@@ -454,10 +460,11 @@ def test_reason_classes_are_the_canonical_eleven() -> None:
 
 
 # --------------------------------------------------------------------------- MCP wire
-def test_mcp_reverify_inputschema_drops_include_federation() -> None:
+def test_mcp_reverify_inputschema_advertises_include_federation() -> None:
     response = dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
     tools = response["result"]["tools"]
     reverify = next(t for t in tools if t["name"] == "warpline_reverify_worklist_get")
-    assert "include_federation" not in reverify["inputSchema"]["properties"]
+    assert "include_federation" in reverify["inputSchema"]["properties"]
+    assert reverify["inputSchema"]["properties"]["include_federation"]["type"] == "boolean"
     assert "filters" in reverify["inputSchema"]["properties"]
     assert "group_by" in reverify["inputSchema"]["properties"]
