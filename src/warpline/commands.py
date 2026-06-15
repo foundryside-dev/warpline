@@ -593,6 +593,17 @@ def reverify_worklist(
             if include_federation
             else None
         )
+        # Track C — light up the inert per-item risk/governance enrichment.
+        # The federation consult resolves per-entity risk/governance facts but
+        # leaves item.enrichment.{risk,governance} at the empty scaffold from
+        # reverify._empty_enrichment(). Merge the federation facts back onto the
+        # matching items HERE — immediately after consult_federation and BEFORE
+        # apply_overflow/apply_page (M3) — so the merge runs over the FULL
+        # filtered+sorted list and a page-2 item is enriched just like a page-1
+        # one. Additive and reversible (D2): this is the proven-need demonstration
+        # that earns freezing the wardline/legis inbound shape, not a pre-promised
+        # contract; it does not lock the RESERVED-SHAPE inbound.
+        risk_state, gov_state = _merge_federation_enrichment(items, federation)
         items, overflow_warnings, overflow = apply_overflow(
             items, repo=repo, tool="warpline_reverify_worklist_get", schema=SCHEMA_REVERIFY_WORKLIST
         )
@@ -635,6 +646,8 @@ def reverify_worklist(
             enrichment=enrichment_state(
                 edges=edges_enrichment(completeness, staleness),
                 work=work_state,
+                risk=risk_state,
+                governance=gov_state,
             ),
             next_actions={"filigree": filigree_candidates},
             warnings=(
@@ -664,6 +677,67 @@ def _federation_warnings(federation: dict[str, Any] | None) -> list[str]:
                 f"FEDERATION: {member} is {klass} — {wr.get('cause')} (fix: {wr.get('fix')})"
             )
     return warnings
+
+
+def _member_scalar(federation: dict[str, Any] | None, member: str) -> str:
+    """R6 scalar rule for a single federation member, mirroring ``work_state``.
+
+    ``federation is None`` means the caller never asked (``include_federation``
+    was False); a member whose ``weft_reason.reason_class`` is anything other than
+    ``clean`` (i.e. ``disabled``/``unreachable``) was asked but could not answer.
+    Both are honestly ``unavailable`` — never ``absent`` (which would falsely read
+    as "asked, peer present, found nothing"). A ``clean`` member that returned at
+    least one entity's facts is ``present``; a ``clean`` member with no facts is the
+    earned-empty ``absent``.
+    """
+
+    if federation is None:
+        return "unavailable"
+    block = federation.get("members", {}).get(member, {})
+    klass = block.get("weft_reason", {}).get("reason_class")
+    if klass != "clean":
+        return "unavailable"
+    return "present" if int(block.get("entity_count", 0) or 0) > 0 else "absent"
+
+
+def _merge_federation_enrichment(
+    items: list[dict[str, Any]], federation: dict[str, Any] | None
+) -> tuple[str, str]:
+    """Merge per-entity ``risk``/``governance`` federation facts onto each item's
+    ``enrichment`` block and return the ``(risk_state, governance_state)`` scalars.
+
+    Track C: ``consult_federation`` resolves the facts but leaves
+    ``item.enrichment.{risk,governance}`` at the empty scaffold. Copy each
+    federation entity's ``risk``/``governance`` lists onto the matching item
+    (keyed on locator). Called over the FULL filtered+sorted worklist before
+    paging, so a page-2 item is enriched identically to a page-1 one (M3).
+
+    Returns the two envelope-level scalars per the R6 rule (see
+    :func:`_member_scalar`). Additive/advisory only; never gates (D2).
+    """
+
+    risk_state = _member_scalar(federation, "wardline")
+    gov_state = _member_scalar(federation, "legis")
+    if federation is None:
+        return risk_state, gov_state
+    fed_by_locator: dict[str, dict[str, Any]] = {}
+    for fed_entity in federation.get("entities", []):
+        locator = fed_entity.get("locator")
+        if isinstance(locator, str) and locator:
+            fed_by_locator[locator] = fed_entity
+    for item in items:
+        locator = item.get("entity", {}).get("locator")
+        if not isinstance(locator, str) or not locator:
+            continue
+        fed_entity = fed_by_locator.get(locator)
+        if fed_entity is None:
+            continue
+        enrichment = item.get("enrichment")
+        if not isinstance(enrichment, dict):
+            continue
+        enrichment["risk"] = fed_entity.get("risk", [])
+        enrichment["governance"] = fed_entity.get("governance", [])
+    return risk_state, gov_state
 
 
 # ---------------------------------------------------------------------------
