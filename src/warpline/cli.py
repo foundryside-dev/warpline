@@ -11,6 +11,7 @@ from warpline.install import install_hook
 from warpline.loomweave import LoomweaveMcpClient, LoomweaveProbe, ToolClient
 from warpline.mcp_smoke import run_mcp_smoke
 from warpline.productization import read_productization_decision
+from warpline.reresolve import sweep_reresolve_sei
 from warpline.store import WarplineStore, default_store_path
 
 # install/doctor component flags -> component keys
@@ -102,6 +103,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--resolve-sei", action=argparse.BooleanOptionalAction, default=True
     )
     ingest.add_argument("--loomweave-command", default="loomweave")
+
+    # NON-FROZEN/internal verb (Rung 1c). Not one of the six frozen v1 MCP
+    # tools; the self-healing SEI re-resolution sweep, exposed for the hook and
+    # for `doctor --fix`.
+    reresolve_parser = sub.add_parser(
+        "reresolve-sei",
+        help="Re-resolve null-sei entity keys via loomweave (self-healing sweep).",
+    )
+    reresolve_parser.add_argument("--repo", type=Path, default=Path("."))
+    reresolve_parser.add_argument("--limit", type=int, default=200)
+    reresolve_parser.add_argument(
+        "--resolve-sei", action=argparse.BooleanOptionalAction, default=True
+    )
+    reresolve_parser.add_argument("--loomweave-command", default="loomweave")
+    reresolve_parser.add_argument("--json", action="store_true")
 
     loomweave_probe = sub.add_parser("loomweave-probe")
     loomweave_probe.add_argument("--repo", type=Path, default=Path("."))
@@ -243,7 +259,26 @@ def main(argv: list[str] | None = None) -> int:
             with WarplineStore.open(default_store_path(args.repo)) as store:
                 store.log_health(args.repo, "HOOK_INGEST_FAILED", str(exc))
         return 0
-    if args.command == "loomweave-probe":
+    if args.command == "reresolve-sei":
+        try:
+            sei_client, sei_resolution = _optional_sei_client(
+                args.repo,
+                enabled=args.resolve_sei,
+                command=args.loomweave_command,
+            )
+            with WarplineStore.open(default_store_path(args.repo)) as store:
+                report = sweep_reresolve_sei(
+                    store, args.repo, sei_client, limit=args.limit
+                )
+        except Exception as exc:  # fail-soft: hook + doctor contract
+            with WarplineStore.open(default_store_path(args.repo)) as store:
+                store.log_health(args.repo, "RERESOLVE_FAILED", str(exc))
+            report = {"error": str(exc), "loomweave": "unavailable"}
+        else:
+            if sei_resolution is not None:
+                report["sei_resolution"] = sei_resolution
+        print(json.dumps(report, sort_keys=True) if args.json else report)
+        return 0
         payload = LoomweaveProbe(repo=args.repo, command=args.loomweave_command).probe()
         print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
         return 0

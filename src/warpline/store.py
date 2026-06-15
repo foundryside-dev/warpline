@@ -409,6 +409,153 @@ class WarplineStore:
         self.conn.commit()
         return int(row["id"])
 
+    def null_sei_entity_keys(self, repo: Path, limit: int = 200) -> list[dict[str, object]]:
+        """Entity keys whose SEI is still NULL, bounded and id-ordered.
+
+        Rung 1c self-healing sweep input. A row minted while loomweave was down
+        keeps ``sei IS NULL`` forever (the UNIQUE index treats a null-sei row and
+        a resolved-sei row for the same locator as distinct identities), so this
+        is the worklist the re-resolution sweep pages through. Ordered by ``id``
+        for deterministic, resumable paging.
+        """
+
+        repo_id = self._repo_id(repo)
+        rows = self.conn.execute(
+            """
+            SELECT id, locator FROM entity_keys
+             WHERE repo_id = ? AND sei IS NULL
+             ORDER BY id
+             LIMIT ?
+            """,
+            (repo_id, int(limit)),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def reresolve_entity_key_sei(
+        self,
+        repo_id: str,
+        null_key_id: int,
+        locator: str,
+        resolved_sei: str,
+    ) -> dict[str, str]:
+        """Idempotent UPDATE-or-merge of a null-sei entity key to a resolved SEI.
+
+        Never re-mints (R11). Returns ``{"action": ...}`` where action is:
+
+        - ``resolved`` — the null row was repointed in place (no twin existed).
+        - ``merged``   — a resolved-sei twin for the same locator already
+          existed; its row is the survivor. ``change_events`` were repointed from
+          the null key to the twin, any rows colliding on the ``change_events``
+          UNIQUE constraint had their **null-keyed duplicate DELETED** (M5: the
+          resolved-keyed row is canonical), the orphan null ``entity_keys`` row
+          was deleted, and ``min(first_seen_commit)`` / ``max(last_seen_commit)``
+          were carried onto the survivor.
+        - ``noop``     — the row no longer matches ``sei IS NULL`` (already healed
+          on a prior pass); convergent re-run.
+
+        All steps run inside one ``BEGIN IMMEDIATE`` transaction.
+        """
+
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = self.conn.execute(
+                "SELECT id, first_seen_commit, last_seen_commit FROM entity_keys "
+                "WHERE id = ? AND repo_id = ? AND sei IS NULL",
+                (null_key_id, repo_id),
+            ).fetchone()
+            if row is None:
+                # Already healed (or never null) — convergent no-op.
+                self.conn.execute("COMMIT")
+                return {"action": "noop"}
+            try:
+                self.conn.execute(
+                    "UPDATE entity_keys SET sei = ? WHERE id = ? AND sei IS NULL",
+                    (resolved_sei, null_key_id),
+                )
+            except sqlite3.IntegrityError:
+                # A resolved-sei twin for this (repo, locator) already exists; it
+                # is the survivor. Repoint change_events, drop colliding null-keyed
+                # duplicates, delete the orphan null key, carry first/last seen.
+                action = self._merge_into_twin(
+                    repo_id=repo_id,
+                    null_key_id=null_key_id,
+                    locator=locator,
+                    resolved_sei=resolved_sei,
+                    null_first_seen=row["first_seen_commit"],
+                    null_last_seen=row["last_seen_commit"],
+                )
+                self.conn.execute("COMMIT")
+                return {"action": action}
+            self.conn.execute("COMMIT")
+            return {"action": "resolved"}
+        except BaseException:
+            self.conn.execute("ROLLBACK")
+            raise
+
+    def _merge_into_twin(
+        self,
+        *,
+        repo_id: str,
+        null_key_id: int,
+        locator: str,
+        resolved_sei: str,
+        null_first_seen: str | None,
+        null_last_seen: str | None,
+    ) -> str:
+        """Merge a null-sei key into its resolved-sei twin (caller holds the txn)."""
+
+        twin = self.conn.execute(
+            "SELECT id, first_seen_commit, last_seen_commit FROM entity_keys "
+            "WHERE repo_id = ? AND locator = ? AND sei = ?",
+            (repo_id, locator, resolved_sei),
+        ).fetchone()
+        if twin is None:  # pragma: no cover - IntegrityError implies a twin exists
+            raise RuntimeError(
+                f"reresolve: IntegrityError but no resolved twin for {locator!r}"
+            )
+        twin_id = int(twin["id"])
+
+        # Repoint change_events one row at a time so a UNIQUE collision on the
+        # twin (same commit/path/change_kind already recorded under the resolved
+        # key) deletes the null-keyed duplicate rather than aborting the repoint.
+        null_events = self.conn.execute(
+            "SELECT id FROM change_events WHERE entity_key_id = ?",
+            (null_key_id,),
+        ).fetchall()
+        for event in null_events:
+            try:
+                self.conn.execute(
+                    "UPDATE change_events SET entity_key_id = ? WHERE id = ?",
+                    (twin_id, event["id"]),
+                )
+            except sqlite3.IntegrityError:
+                # The resolved-keyed row is canonical (M5): drop the null-keyed
+                # duplicate. Any divergent data on it (hunk_summary, actor) is
+                # deliberately discarded — explicit, documented data loss (Q7).
+                self.conn.execute(
+                    "DELETE FROM change_events WHERE id = ?", (event["id"],)
+                )
+
+        # Carry first/last seen onto the survivor: min(first), max(last) across
+        # both rows. Commit SHAs are not chronologically orderable, so this is a
+        # deterministic string min/max that never drops a non-null value.
+        twin_first = twin["first_seen_commit"]
+        twin_last = twin["last_seen_commit"]
+        firsts = [
+            str(v) for v in (twin_first, null_first_seen) if v is not None
+        ]
+        lasts = [str(v) for v in (twin_last, null_last_seen) if v is not None]
+        merged_first = min(firsts) if firsts else None
+        merged_last = max(lasts) if lasts else None
+        self.conn.execute(
+            "UPDATE entity_keys SET first_seen_commit = ?, last_seen_commit = ? WHERE id = ?",
+            (merged_first, merged_last, twin_id),
+        )
+
+        # Delete the now-orphaned null key (its events were repointed/merged).
+        self.conn.execute("DELETE FROM entity_keys WHERE id = ?", (null_key_id,))
+        return "merged"
+
     def list_entity_keys(self, repo: Path) -> list[dict[str, object]]:
         repo_id = self._repo_id(repo)
         rows = self.conn.execute(
