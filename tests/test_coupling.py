@@ -11,6 +11,8 @@ joins the SEI at read time — never minting one.
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -408,23 +410,50 @@ def test_null_changed_at_does_not_wipe_populated_marker(tmp_path: Path) -> None:
 def test_rebuild_and_incremental_converge_on_recency_marker(tmp_path: Path) -> None:
     """#7: rebuild replays in chronological order so its markers match live ingest.
 
-    Two commits touch the same file pair; the chronologically-LATER commit sorts
-    LEXICALLY-EARLIER by sha. Live ingest (commit order) leaves the marker on the
-    later commit; a rebuild that replayed lexically would land on the wrong one.
-    They must converge.
+    Two commits touch the same file pair, c2 authored AFTER c1. The recency
+    marker must land on the chronologically-LATER commit (c2) — its author date
+    AND its sha — regardless of how the shas happen to sort lexically; a rebuild
+    that replayed in lexical-sha order would land on the wrong one. Live ingest
+    and a full rebuild must converge on the same (chronological) marker.
+
+    Author AND committer dates are pinned so the commits are byte-reproducible
+    across environments, and the expected ``(author-date, sha)`` is oracled from
+    the SAME git that warpline reads — git renders ``%aI`` for a back-dated commit
+    differently across versions (2.43 vs 2.54), so hard-coding the date string is
+    not portable; the invariant under test is "marker == latest commit", not a
+    particular string spelling.
     """
 
     repo = _init_repo(tmp_path)
+
+    def _commit(msg: str, date: str) -> None:
+        # Pin both author and committer dates: the committer date otherwise
+        # defaults to wall-clock now, leaving the shas (hence this regression's
+        # lexical-vs-chronological setup) nondeterministic across runs/CI.
+        env = {**os.environ, "GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date}
+        subprocess.run(
+            ["git", "commit", "-m", msg],
+            cwd=repo,
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            env=env,
+        )
+
     (repo / "a.py").write_text("x = 1\n", encoding="utf-8")
     (repo / "b.py").write_text("y = 1\n", encoding="utf-8")
     _git(repo, "add", "a.py", "b.py")
-    # First commit (older author date) — forced lexically-LATER message/date order
-    # is irrelevant; what matters is author time vs sha order, which git assigns.
-    _git(repo, "commit", "-m", "c1", "--date=2024-01-01T00:00:00+00:00")
+    _commit("c1", "2024-01-01T00:00:00+00:00")
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
     (repo / "b.py").write_text("y = 2\n", encoding="utf-8")
     _git(repo, "add", "a.py", "b.py")
-    _git(repo, "commit", "-m", "c2", "--date=2024-06-01T00:00:00+00:00")
+    _commit("c2", "2024-06-01T00:00:00+00:00")
+
+    # Oracle the expected marker from git itself: the chronologically-latest
+    # commit by author date, and its author date in the exact %aI spelling this
+    # git emits (the same value warpline stores via _commit_meta).
+    latest_sha = _git(repo, "log", "-1", "--author-date-order", "--format=%H")
+    latest_authored = _git(repo, "show", "-s", "--format=%aI", latest_sha)
 
     with WarplineStore.open(default_store_path(repo)) as store:
         backfill(store, repo)  # incremental, in commit (chronological) order
@@ -442,7 +471,9 @@ def test_rebuild_and_incremental_converge_on_recency_marker(tmp_path: Path) -> N
         store.rebuild_co_change_pairs(repo)
         rebuilt_markers = _markers()
     assert live_markers == rebuilt_markers
-    # The marker reflects the chronologically-latest commit (2024-06-01), never
-    # whichever sha happens to sort last lexically.
+    # The marker reflects the chronologically-latest commit (c2) — its author
+    # date and its sha — never whichever sha happens to sort last lexically.
     assert live_markers
-    assert all(m[0] == "2024-06-01T00:00:00+00:00" for m in live_markers)
+    assert all(
+        m == (latest_authored, latest_sha) for m in live_markers
+    ), f"markers={live_markers} expected=({latest_authored!r}, {latest_sha!r})"
