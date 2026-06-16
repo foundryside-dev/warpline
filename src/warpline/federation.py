@@ -128,7 +128,7 @@ def _consult_filigree(
             "disabled",
             cause="no filigree transport configured for this reverify call",
             fix=(
-                "pass a WorkClient (FiligreeWorkClient over the filigree CLI, or the "
+                "pass a WorkClient (FiligreeWorkClient over filigree's HTTP API, or the "
                 "federation client) so reverify can read entity-associations keyed on the SEI"
             ),
         )
@@ -290,7 +290,8 @@ def federation_transport_blockers(
             {
                 "member": "filigree",
                 "need": (
-                    "a WorkClient (FiligreeWorkClient over the filigree CLI) for the reverify call"
+                    "a WorkClient (FiligreeWorkClient over filigree's HTTP API) "
+                    "for the reverify call"
                 ),
             }
         )

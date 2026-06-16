@@ -21,8 +21,15 @@ current structure, requirements, work state, trust policy, or governance.
 
 `warpline_entity_churn_count_get` is the no-dead-by-design read (pure GROUP BY over
 `change_events`) that lets loomweave light up `entity_high_churn_list` with no
-contract edit. `warpline_impact_radius_get` carries both the wardline
-`affected_scope` and legis `preflight_impact` payloads.
+contract edit. The wardline `affected_scope` and legis `preflight_impact`
+"payloads" are **not separately-emitted schemas**: they are consumer-lens names
+for the single `warpline.impact_radius.v1` wire shape `warpline_impact_radius_get`
+already emits (interface-lock §3A/§4A — "same wire shape, surfaced via
+`warpline_impact_radius_get`"; readiness table: `impact_radius I/O (=
+affected_scope + preflight_impact)`). wardline reads that output as scoped-rescan
+hints (`affected_scope`); legis reads the same output as advisory preflight
+context (`preflight_impact`). Golden vectors GV-WL-1 and GV-LG-1 pin both lenses
+against `warpline_impact_radius_get`.
 
 ## Envelope (frozen)
 
