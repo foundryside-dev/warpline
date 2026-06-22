@@ -1501,7 +1501,9 @@ class WarplineStore:
         try:
             cur = self.conn.execute(
                 """
-                INSERT INTO edge_snapshots(repo_id, commit_sha, source, source_version, completeness)
+                INSERT INTO edge_snapshots(
+                  repo_id, commit_sha, source, source_version, completeness
+                )
                 VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(repo_id, commit_sha, source) DO UPDATE SET
                   source_version = excluded.source_version,
