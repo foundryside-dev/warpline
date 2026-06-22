@@ -449,3 +449,33 @@ def test_capture_snapshot_atomic_replaces_edges_in_one_transaction(tmp_path: Pat
         {"source_entity_key_id": b, "target_entity_key_id": a,
          "edge_kind": "calls", "confidence": "resolved"}
     ]
+
+
+def test_capped_capture_publishes_single_delta_row(tmp_path: Path) -> None:
+    """A max_entities-capped capture writes exactly one DELTA row, atomically,
+    with its edges present — never a transient FULL or empty row."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    with WarplineStore.open(tmp_path / "warpline.db") as store:
+        repo_id = store.ensure_repo(repo)
+        store.ensure_entity_key(
+            repo_id, locator="python:function:a", sei=None, commit_sha="c1"
+        )
+        store.ensure_entity_key(
+            repo_id, locator="python:function:z", sei=None, commit_sha="c1"
+        )
+        result = capture_edge_snapshot(
+            store, repo, commit_sha="c1", client=FakeNeighborhoodClient(),
+            source_version="v1", max_entities=1,
+        )
+        snap = store.latest_snapshot(repo)
+        assert snap is not None
+        edges = store.snapshot_edges(int(snap["id"]))
+
+    assert result["capped"] is True
+    assert result["completeness"] == "DELTA"
+    assert snap["completeness"] == "DELTA"
+    # The single queried entity ("python:function:a", sorted first) yields its
+    # one edge; the row is published WITH that edge, not empty.
+    assert result["edges"] == 1
+    assert len(edges) == 1
