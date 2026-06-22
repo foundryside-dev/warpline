@@ -510,3 +510,67 @@ def test_entity_churn_count_sei_absent_carries_unresolved_input_triple(tmp_path:
     env = commands.entity_churn_count(repo, [{"kind": "locator", "value": "python:function:a"}])
     assert env["enrichment"]["sei"] == "absent"
     assert env["enrichment_reasons"]["sei"]["reason_class"] == "unresolved_input"
+
+
+# --------------------------------------------------------------------------- (f)
+def test_capture_sei_unavailable_carries_unreachable_triple(tmp_path: Path) -> None:
+    """Capture against an unreachable Loomweave emits sei:unavailable WITH an
+    unreachable triple (peer down) — never an implied clean/resolved state."""
+
+    repo = _init_repo(tmp_path)
+    _commit(repo, "a.py", "a = 1\n")
+    env = commands.capture_snapshot(repo, commit="HEAD", loomweave_command="/no/such")
+    assert env["enrichment"]["sei"] == "unavailable"
+    assert env["enrichment_reasons"]["sei"]["reason_class"] == "unreachable"
+    assert "loomweave" in env["enrichment_reasons"]["sei"]["cause"].lower()
+
+
+def test_entity_timeline_governance_unavailable_carries_disabled_triple(tmp_path: Path) -> None:
+    """Without a rename-feed transport, governance is unavailable WITH a disabled
+    triple (no transport wired) — not a bare scalar."""
+
+    repo = _init_repo(tmp_path)
+    first = _commit(repo, "a.py", "a = 1\n")
+    with WarplineStore.open(default_store_path(repo)) as store:
+        repo_id = store.ensure_repo(repo)
+        key = store.ensure_entity_key(
+            repo_id, locator="python:function:a", sei=None, commit_sha=first
+        )
+        store.append_change_event(
+            repo_id=repo_id,
+            entity_key_id=key,
+            commit_sha=first,
+            change_kind="modified",
+            actor="agent:test",
+            changed_at="2026-06-13T00:00:00Z",
+            path="a.py",
+        )
+    env = commands.entity_timeline(repo, "python:function:a")
+    assert env["enrichment"]["governance"] == "unavailable"
+    assert env["enrichment_reasons"]["governance"]["reason_class"] == "disabled"
+    assert env["enrichment_reasons"]["governance"]["fix"]
+
+
+def test_entity_timeline_governance_present_is_clean_triple(tmp_path: Path) -> None:
+    from warpline.siblings import RenameFeed
+
+    repo = _init_repo(tmp_path)
+    first = _commit(repo, "a.py", "a = 1\n")
+    with WarplineStore.open(default_store_path(repo)) as store:
+        repo_id = store.ensure_repo(repo)
+        key = store.ensure_entity_key(
+            repo_id, locator="python:function:a", sei=None, commit_sha=first
+        )
+        store.append_change_event(
+            repo_id=repo_id,
+            entity_key_id=key,
+            commit_sha=first,
+            change_kind="modified",
+            actor="agent:test",
+            changed_at="2026-06-13T00:00:00Z",
+            path="a.py",
+        )
+    feed = RenameFeed([{"old_locator": "python:function:a", "new_locator": "python:function:a"}])
+    env = commands.entity_timeline(repo, "python:function:a", rename_feed=feed)
+    assert env["enrichment"]["governance"] == "present"
+    assert env["enrichment_reasons"]["governance"] == {"reason_class": "clean"}

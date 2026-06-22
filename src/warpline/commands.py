@@ -22,6 +22,7 @@ from warpline.listing import (
     apply_overflow,
     apply_page,
     apply_sort,
+    reason,
 )
 from warpline.loomweave import (
     LoomweaveMcpClient,
@@ -397,6 +398,21 @@ def entity_timeline(
         sei_state = "present" if entity_out["sei"] else "absent"
         sei_triple = sei_reason(sei_state)
         assert sei_triple is not None  # present/absent are always in-vocab
+        if rename_feed is not None:
+            governance_reason = reason("clean")
+        else:
+            governance_reason = reason(
+                "disabled",
+                cause=(
+                    "no rename-feed governance transport was supplied, so the timeline is a "
+                    "raw-git stitch with no rename-aware governance provenance"
+                ),
+                fix=(
+                    "pass a RenameFeed (a legis/rename governance read) to entity_timeline so "
+                    "pre-rename events stitch with governance provenance; until then governance "
+                    "is honestly disabled, not empty"
+                ),
+            )
         return build_envelope(
             SCHEMA_ENTITY_TIMELINE,
             query=query,
@@ -405,7 +421,7 @@ def entity_timeline(
                 sei=sei_state,
                 governance="present" if rename_feed is not None else "unavailable",
             ),
-            enrichment_reasons={"sei": sei_triple},
+            enrichment_reasons={"sei": sei_triple, "governance": governance_reason},
             warnings=overflow_warnings,
         )
 
@@ -1121,10 +1137,13 @@ def capture_snapshot(
             "sort": {},
             "page": {"limit": None, "cursor": None},
         }
+        capture_sei_triple = sei_reason(sei_state)
+        assert capture_sei_triple is not None  # unavailable/absent are always in-vocab
         return build_envelope(
             SCHEMA_EDGE_SNAPSHOT,
             query=query,
             data=data,
             enrichment=enrichment_state(edges=edges_state, sei=sei_state),
+            enrichment_reasons={"sei": capture_sei_triple},
             warnings=completeness_warnings(str(data["completeness"])) + warnings,
         )
