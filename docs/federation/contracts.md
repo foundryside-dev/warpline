@@ -57,8 +57,9 @@ failure (enrich-only).
   real consumption (HX1 SEI resolution, edge capture).
 - **filigree** (`entity_association_list_by_entity` SEI reverse-lookup +
   `issue_get`): EARNED — warpline consumes it for reverify work enrichment
-  (golden vectors GV-FI-1, GV-FI-3). Advisory only; warpline never files/closes/
-  claims work.
+  (golden vectors GV-FI-1, GV-FI-3 plus the gated live dashboard proof in
+  `tests/integration/test_filigree_live.py`). Advisory only; warpline never
+  files/closes/claims work.
 - **wardline** (finding/risk by SEI): NON-BINDING reserved shape — warpline
   degrades to `risk: unavailable`, never `clean`.
 - **legis** (git-rename feed): the generic locator-rename FEED shape is earned

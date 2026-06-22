@@ -703,7 +703,9 @@ def reverify_worklist(
         }
         if federation is not None:
             data["federation"] = federation
-        if work_client is None:
+        if federation is not None:
+            work_state = _member_scalar(federation, "filigree")
+        elif work_client is None:
             work_state = "unavailable"
         else:
             work_state = "present" if work_seen else "absent"

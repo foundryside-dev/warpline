@@ -23,7 +23,7 @@ from typing import Any
 import pytest
 
 from warpline import siblings
-from warpline.siblings import FiligreeWorkClient
+from warpline.siblings import FiligreeWorkClient, work_enrichment_for_sei
 
 
 class _FakeResponse:
@@ -152,3 +152,18 @@ def test_base_url_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("FILIGREE_API_URL", raising=False)
     client = FiligreeWorkClient(Path("/repo"))
     assert client.base_url == "http://localhost:8724"
+
+
+def test_work_enrichment_derives_claim_state_from_live_issue_assignee() -> None:
+    class LiveShape:
+        def associations(self, sei: str) -> list[dict[str, Any]]:
+            return [{"issue_id": "weft-1", "entity_kind": "function"}]
+
+        def issue(self, issue_id: str) -> dict[str, Any]:
+            return {"id": issue_id, "status": "in_progress", "priority": 2, "assignee": "Codex"}
+
+    work = work_enrichment_for_sei(LiveShape(), "loomweave:eid:x")
+
+    assert work[0]["issue_id"] == "weft-1"
+    assert work[0]["issue_status"] == "in_progress"
+    assert work[0]["claim_state"] == "claimed"

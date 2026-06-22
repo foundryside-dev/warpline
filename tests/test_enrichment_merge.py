@@ -81,6 +81,16 @@ class _BoomRisk:
         raise RuntimeError("wardline dossier exploded")
 
 
+class _BoomWork:
+    """A filigree WorkClient whose transport raises mid-consult (unreachable)."""
+
+    def associations(self, sei: str) -> list[dict[str, Any]]:
+        raise RuntimeError("filigree dashboard exploded")
+
+    def issue(self, issue_id: str) -> dict[str, Any]:
+        return {}
+
+
 def test_findings_populate_item_risk_and_envelope_present(tmp_path: Path) -> None:
     repo, keys = _seed_repo_with_entities(tmp_path, ["python:function:a.py::a"])
     env = commands.reverify_worklist(
@@ -127,6 +137,19 @@ def test_unreachable_member_is_unavailable_not_absent(tmp_path: Path) -> None:
     )
     # a transport that raised is unreachable -> unavailable, never a false absent.
     assert env["enrichment"]["risk"] == "unavailable"
+
+
+def test_unreachable_filigree_work_is_unavailable_not_absent(tmp_path: Path) -> None:
+    repo, keys = _seed_repo_with_entities(tmp_path, ["python:function:a.py::a"])
+    env = commands.reverify_worklist(
+        repo, keys, depth=2, include_federation=True, work_client=_BoomWork()
+    )
+
+    assert env["enrichment"]["work"] == "unavailable"
+    assert (
+        env["data"]["federation"]["members"]["filigree"]["weft_reason"]["reason_class"]
+        == "unreachable"
+    )
 
 
 def test_page_two_item_is_still_enriched(tmp_path: Path) -> None:

@@ -30,7 +30,7 @@ class WorkClient(Protocol):
         ...
 
     def issue(self, issue_id: str) -> dict[str, Any]:
-        """issue_get(issue_id) → {id, status, assignee, claim_state, priority}."""
+        """issue_get(issue_id) → {id, status, assignee/claim_state, priority}."""
         ...
 
 
@@ -65,6 +65,8 @@ def work_enrichment_for_sei(client: WorkClient, sei: str) -> list[dict[str, Any]
         except Exception:
             issue = {}
         claim_state = issue.get("claim_state") or assoc.get("claim_state")
+        if claim_state is None:
+            claim_state = "claimed" if issue.get("assignee") else "unclaimed"
         items.append(
             {
                 "issue_id": issue_id,
