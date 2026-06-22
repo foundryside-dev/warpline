@@ -34,7 +34,13 @@
     {"id": "GV-LG-3", "seam": "all", "tool": "all six",
      "assert": "every response carries meta.local_only true, peer_side_effects []"},
     {"id": "GV-LW-6", "seam": "loomweave", "tool": "warpline_edge_snapshot_capture",
-     "assert": "hard mid-capture failure (loomweave killed) leaves the prior snapshot intact and visible (fail-closed); no edge_snapshots row is visible until all its edges are committed; never a degraded DELTA/0-edge row"}
+     "assert": "hard mid-capture failure (loomweave killed) leaves the prior snapshot intact and visible (fail-closed); no edge_snapshots row is visible until all its edges are committed; never a degraded DELTA/0-edge row"},
+    {"id": "GV-HON-SEI", "seam": "loomweave", "tool": "warpline_change_list / warpline_edge_snapshot_capture",
+     "assert": "sei absence is explained: change_list no-SEI -> enrichment.sei absent + enrichment_reasons.sei reason_class unresolved_input; capture loomweave-down -> sei unavailable + reason_class unreachable"},
+    {"id": "GV-HON-GOV", "seam": "legis", "tool": "warpline_entity_timeline_get",
+     "assert": "timeline governance is explained: rename feed -> governance present + enrichment_reasons.governance clean; no feed -> governance unavailable + reason_class disabled"},
+    {"id": "GV-HON-REQ", "seam": "all", "tool": "all six",
+     "assert": "reserved requirements dimension carries a stable disabled triple (reserved, not yet wired) on every tool; scalar stays unavailable"}
   ],
   "reserved_shape_inbound": {
     "loomweave": "PROVEN+FROZEN (entity_resolve, entity_neighborhood_get) — real consumption (HX1, capture)",

@@ -1,4 +1,4 @@
-"""The 15 FROZEN golden vectors (interface-lock §1D, 2C, 3C, 4C).
+"""The 18 FROZEN golden vectors (interface-lock §1D, 2C, 3C, 4C).
 
 These are warpline's contribution as the 5th producer to the four-member
 conformance oracle (GS-7). Each test is one frozen (input → output assertion)
@@ -404,3 +404,70 @@ def test_gv_lg_3_every_response_is_local_only_with_no_side_effects(tmp_path: Pat
     for env in envelopes:
         assert env["meta"]["local_only"] is True
         assert env["meta"]["peer_side_effects"] == []
+
+
+# ============================================================ honesty completeness (WS2)
+def test_gv_hon_sei_sei_absence_carries_explained_triple(tmp_path: Path) -> None:
+    """GV-HON-SEI: sei absence is EXPLAINED — change_list with no SEI emits
+    sei:absent + unresolved_input triple; capture with Loomweave down emits
+    sei:unavailable + unreachable triple. Never a bare, unexplained scalar."""
+
+    repo = _git_repo(tmp_path)
+    with _store(repo) as store:
+        repo_id = store.ensure_repo(repo)
+        a = _seed_entity(store, repo_id, "python:function:m.py::f", None)
+        _add_change(store, repo_id, a, path="m.py")
+    listed = commands.change_list(repo)
+    assert listed["enrichment"]["sei"] == "absent"
+    assert listed["enrichment_reasons"]["sei"]["reason_class"] == "unresolved_input"
+
+    captured = commands.capture_snapshot(repo, commit="c1", loomweave_command="/no/such")
+    assert captured["enrichment"]["sei"] == "unavailable"
+    assert captured["enrichment_reasons"]["sei"]["reason_class"] == "unreachable"
+
+
+def test_gv_hon_gov_timeline_governance_carries_explained_triple(tmp_path: Path) -> None:
+    """GV-HON-GOV: entity_timeline governance is EXPLAINED — present->clean with a
+    rename feed, disabled (no transport) without one."""
+
+    repo = _git_repo(tmp_path)
+    old = "python:function:old_mod.py::f"
+    new = "python:function:new_mod.py::f"
+    with _store(repo) as store:
+        repo_id = store.ensure_repo(repo)
+        a = _seed_entity(store, repo_id, old, None)
+        _add_change(store, repo_id, a, path="old_mod.py", commit="c1")
+
+    feed = RenameFeed([{"old_locator": old, "new_locator": new}])
+    with_feed = commands.entity_timeline(repo, new, rename_feed=feed)
+    assert with_feed["enrichment"]["governance"] == "present"
+    assert with_feed["enrichment_reasons"]["governance"] == {"reason_class": "clean"}
+
+    without_feed = commands.entity_timeline(repo, new)
+    assert without_feed["enrichment"]["governance"] == "unavailable"
+    assert without_feed["enrichment_reasons"]["governance"]["reason_class"] == "disabled"
+
+
+def test_gv_hon_req_requirements_is_reserved_but_honest_on_every_tool(tmp_path: Path) -> None:
+    """GV-HON-REQ: the reserved requirements dimension carries a stable disabled
+    triple (reserved, not yet wired) on every tool — scalar stays unavailable."""
+
+    repo = _git_repo(tmp_path)
+    with _store(repo) as store:
+        repo_id = store.ensure_repo(repo)
+        a = _seed_entity(store, repo_id, "python:function:m.py::a", "loomweave:eid:aaaa")
+        _add_change(store, repo_id, a, path="m.py")
+        a_id = a
+    envelopes = [
+        commands.change_list(repo),
+        commands.entity_timeline(repo, "python:function:m.py::a"),
+        commands.entity_churn_count(repo, [{"kind": "sei", "value": "loomweave:eid:aaaa"}]),
+        commands.impact_radius(repo, [a_id]),
+        commands.reverify_worklist(repo, [a_id]),
+        commands.capture_snapshot(repo, commit="c1", loomweave_command="/no/such"),
+    ]
+    for env in envelopes:
+        assert env["enrichment"]["requirements"] == "unavailable"
+        triple = env["enrichment_reasons"]["requirements"]
+        assert triple["reason_class"] == "disabled"
+        assert "reserved" in triple["cause"].lower()
