@@ -101,3 +101,43 @@ def requirements_reason() -> dict[str, Any]:
             "not an earned-empty"
         ),
     )
+
+
+def sei_reason(sei_state: str) -> dict[str, Any] | None:
+    """Map a closed ``enrichment.sei`` scalar to its explanatory weft-reason triple.
+
+    ``present`` is an earned ``clean``; ``absent`` (peer present, the changed
+    locator never resolved to an SEI) is ``unresolved_input``; ``unavailable``
+    (the Loomweave SEI authority was unreachable, e.g. mid-capture) is
+    ``unreachable``. Returns ``None`` for any value outside the closed vocab so a
+    caller never attaches a triple it cannot explain. Reuses the canonical 11 —
+    no new reason_class.
+    """
+
+    if sei_state == "present":
+        return reason("clean")
+    if sei_state == "absent":
+        return reason(
+            "unresolved_input",
+            cause=(
+                "the changed entity's locator never resolved to a Loomweave SEI "
+                "(peer present, no stable-entity-identity for this locator yet)"
+            ),
+            fix=(
+                "run `loomweave analyze <repo>` so the locator gets a stable SEI, then re-query; "
+                "until then sei is honestly absent, not an earned-empty"
+            ),
+        )
+    if sei_state == "unavailable":
+        return reason(
+            "unreachable",
+            cause=(
+                "the Loomweave SEI authority was unreachable, so SEI resolution could not be "
+                "attempted (peer down — never an implied clean/resolved state)"
+            ),
+            fix=(
+                "confirm `loomweave serve` is reachable (or the loomweave CLI is on PATH), then "
+                "recapture/re-query so SEIs can be resolved"
+            ),
+        )
+    return None
