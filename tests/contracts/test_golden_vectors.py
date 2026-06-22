@@ -419,11 +419,17 @@ def test_gv_hon_sei_sei_absence_carries_explained_triple(tmp_path: Path) -> None
         _add_change(store, repo_id, a, path="m.py")
     listed = commands.change_list(repo)
     assert listed["enrichment"]["sei"] == "absent"
-    assert listed["enrichment_reasons"]["sei"]["reason_class"] == "unresolved_input"
+    t_absent = listed["enrichment_reasons"]["sei"]
+    assert t_absent["reason_class"] == "unresolved_input"
+    assert t_absent["cause"]
+    assert t_absent["fix"]
 
     captured = commands.capture_snapshot(repo, commit="c1", loomweave_command="/no/such")
     assert captured["enrichment"]["sei"] == "unavailable"
-    assert captured["enrichment_reasons"]["sei"]["reason_class"] == "unreachable"
+    t_unreach = captured["enrichment_reasons"]["sei"]
+    assert t_unreach["reason_class"] == "unreachable"
+    assert t_unreach["cause"]
+    assert t_unreach["fix"]
 
 
 def test_gv_hon_gov_timeline_governance_carries_explained_triple(tmp_path: Path) -> None:
@@ -445,7 +451,10 @@ def test_gv_hon_gov_timeline_governance_carries_explained_triple(tmp_path: Path)
 
     without_feed = commands.entity_timeline(repo, new)
     assert without_feed["enrichment"]["governance"] == "unavailable"
-    assert without_feed["enrichment_reasons"]["governance"]["reason_class"] == "disabled"
+    t_gov_disabled = without_feed["enrichment_reasons"]["governance"]
+    assert t_gov_disabled["reason_class"] == "disabled"
+    assert t_gov_disabled["cause"]
+    assert t_gov_disabled["fix"]
 
 
 def test_gv_hon_req_requirements_is_reserved_but_honest_on_every_tool(tmp_path: Path) -> None:
@@ -470,4 +479,6 @@ def test_gv_hon_req_requirements_is_reserved_but_honest_on_every_tool(tmp_path: 
         assert env["enrichment"]["requirements"] == "unavailable"
         triple = env["enrichment_reasons"]["requirements"]
         assert triple["reason_class"] == "disabled"
+        assert triple["cause"]
         assert "reserved" in triple["cause"].lower()
+        assert triple["fix"]
