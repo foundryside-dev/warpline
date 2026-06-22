@@ -432,3 +432,81 @@ def test_requirements_is_reserved_but_honest_on_every_tool(tmp_path: Path) -> No
     assert triple["reason_class"] == "disabled"
     assert "reserved" in triple["cause"].lower()
     assert triple["fix"]
+
+
+# --------------------------------------------------------------------------- (e)
+def test_change_list_sei_absent_carries_unresolved_input_triple(tmp_path: Path) -> None:
+    """A change_list over an entity with no SEI emits sei:absent WITH a triple
+    explaining the locator never resolved — not a bare, unexplained scalar."""
+
+    repo = _init_repo(tmp_path)
+    first = _commit(repo, "a.py", "a = 1\n")
+    with WarplineStore.open(default_store_path(repo)) as store:
+        repo_id = store.ensure_repo(repo)
+        key = store.ensure_entity_key(
+            repo_id, locator="python:function:a", sei=None, commit_sha=first
+        )
+        store.append_change_event(
+            repo_id=repo_id,
+            entity_key_id=key,
+            commit_sha=first,
+            change_kind="modified",
+            actor="agent:test",
+            changed_at="2026-06-13T00:00:00Z",
+            path="a.py",
+        )
+    env = commands.change_list(repo)
+    assert env["enrichment"]["sei"] == "absent"
+    assert env["enrichment_reasons"]["sei"]["reason_class"] == "unresolved_input"
+
+
+def test_change_list_sei_present_is_clean_triple(tmp_path: Path) -> None:
+    repo = _init_repo(tmp_path)
+    first = _commit(repo, "a.py", "a = 1\n")
+    with WarplineStore.open(default_store_path(repo)) as store:
+        repo_id = store.ensure_repo(repo)
+        key = store.ensure_entity_key(
+            repo_id, locator="python:function:a", sei="loomweave:eid:aaaa", commit_sha=first
+        )
+        store.append_change_event(
+            repo_id=repo_id,
+            entity_key_id=key,
+            commit_sha=first,
+            change_kind="modified",
+            actor="agent:test",
+            changed_at="2026-06-13T00:00:00Z",
+            path="a.py",
+        )
+    env = commands.change_list(repo)
+    assert env["enrichment"]["sei"] == "present"
+    assert env["enrichment_reasons"]["sei"] == {"reason_class": "clean"}
+
+
+def test_entity_timeline_sei_absent_carries_unresolved_input_triple(tmp_path: Path) -> None:
+    repo = _init_repo(tmp_path)
+    first = _commit(repo, "a.py", "a = 1\n")
+    with WarplineStore.open(default_store_path(repo)) as store:
+        repo_id = store.ensure_repo(repo)
+        key = store.ensure_entity_key(
+            repo_id, locator="python:function:a", sei=None, commit_sha=first
+        )
+        store.append_change_event(
+            repo_id=repo_id,
+            entity_key_id=key,
+            commit_sha=first,
+            change_kind="modified",
+            actor="agent:test",
+            changed_at="2026-06-13T00:00:00Z",
+            path="a.py",
+        )
+    env = commands.entity_timeline(repo, "python:function:a")
+    assert env["enrichment"]["sei"] == "absent"
+    assert env["enrichment_reasons"]["sei"]["reason_class"] == "unresolved_input"
+
+
+def test_entity_churn_count_sei_absent_carries_unresolved_input_triple(tmp_path: Path) -> None:
+    repo = _init_repo(tmp_path)
+    _commit(repo, "a.py", "a = 1\n")
+    env = commands.entity_churn_count(repo, [{"kind": "locator", "value": "python:function:a"}])
+    assert env["enrichment"]["sei"] == "absent"
+    assert env["enrichment_reasons"]["sei"]["reason_class"] == "unresolved_input"

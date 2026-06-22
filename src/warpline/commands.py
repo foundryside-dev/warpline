@@ -10,6 +10,7 @@ from warpline._enrichment import (
     EDGES_FOR_COMPLETENESS,
     completeness_warnings,
     edges_enrichment,
+    sei_reason,
     staleness_warnings,
 )
 from warpline.envelope import build_envelope, enrichment_state
@@ -304,11 +305,15 @@ def change_list(
             "sort": {"by": sort_by or "changed_at", "order": sort_order or "asc"},
             "page": {"limit": limit, "cursor": cursor},
         }
+        sei_state = "present" if has_sei else "absent"
+        sei_triple = sei_reason(sei_state)
+        assert sei_triple is not None  # present/absent are always in-vocab
         return build_envelope(
             SCHEMA_CHANGE_LIST,
             query=query,
             data=data,
-            enrichment=enrichment_state(sei="present" if has_sei else "absent"),
+            enrichment=enrichment_state(sei=sei_state),
+            enrichment_reasons={"sei": sei_triple},
             next_actions=next_actions,
             warnings=overflow_warnings,
         )
@@ -389,14 +394,18 @@ def entity_timeline(
             "sort": {"by": sort_by or "changed_at", "order": sort_order or "asc"},
             "page": {"limit": limit, "cursor": cursor},
         }
+        sei_state = "present" if entity_out["sei"] else "absent"
+        sei_triple = sei_reason(sei_state)
+        assert sei_triple is not None  # present/absent are always in-vocab
         return build_envelope(
             SCHEMA_ENTITY_TIMELINE,
             query=query,
             data=data,
             enrichment=enrichment_state(
-                sei="present" if entity_out["sei"] else "absent",
+                sei=sei_state,
                 governance="present" if rename_feed is not None else "unavailable",
             ),
+            enrichment_reasons={"sei": sei_triple},
             warnings=overflow_warnings,
         )
 
@@ -474,11 +483,15 @@ def entity_churn_count(
             "sort": {"by": sort_by, "order": sort_order},
             "page": {"limit": limit, "cursor": cursor},
         }
+        sei_state = "present" if has_sei else "absent"
+        sei_triple = sei_reason(sei_state)
+        assert sei_triple is not None  # present/absent are always in-vocab
         return build_envelope(
             SCHEMA_ENTITY_CHURN_COUNT,
             query=query,
             data=data,
-            enrichment=enrichment_state(sei="present" if has_sei else "absent"),
+            enrichment=enrichment_state(sei=sei_state),
+            enrichment_reasons={"sei": sei_triple},
             warnings=overflow_warnings,
         )
 
