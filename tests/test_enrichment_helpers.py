@@ -1,10 +1,9 @@
 """Characterization tests for the pure staleness/completeness helpers.
 
 Locks the (completeness, staleness) -> enrichment.edges mapping and the
-warning text BEFORE the Rung 0 extraction moves these bodies into
-``warpline._enrichment``. Pure functions, no fixtures. These imports are
-retargeted to ``warpline._enrichment`` in Step 0.2; until then they pin the
-behaviour as it lives in ``warpline.commands``.
+warning text, and the sei_reason / requirements_reason weft-reason helpers.
+Pure functions, no fixtures; these characterize the helpers as they live in
+``warpline._enrichment``.
 """
 
 from __future__ import annotations
