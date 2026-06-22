@@ -919,7 +919,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - [ ] Prove the suite is locatable from an arbitrary cwd (the hub-load simulation). Command:
 
 ```bash
-cd /tmp && python -m pytest "/home/john/warpline/tests/contracts/test_warpline_contract_fixtures.py::test_fixtures_root_resolves_independent_of_cwd" -q
+cd /tmp && python -m pytest "tests/contracts/test_warpline_contract_fixtures.py::test_fixtures_root_resolves_independent_of_cwd" -q
 ```
 
   Expected: `1 passed`. (Confirms Task 8's anchoring removed the cwd dependency.)

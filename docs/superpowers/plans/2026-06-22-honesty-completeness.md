@@ -111,7 +111,7 @@ def test_clean_reason_needs_no_cause_or_fix() -> None:
 
 - [ ] Run it and watch it fail (the keyword does not exist yet):
 ```bash
-cd /home/john/warpline && python -m pytest tests/test_envelope_reasons.py -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest tests/test_envelope_reasons.py -q
 ```
 Expected failure: `TypeError: build_envelope() got an unexpected keyword argument 'enrichment_reasons'`.
 
@@ -168,29 +168,29 @@ def build_envelope(
 
 - [ ] Run the test and watch it pass:
 ```bash
-cd /home/john/warpline && python -m pytest tests/test_envelope_reasons.py -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest tests/test_envelope_reasons.py -q
 ```
 Expected: `5 passed`.
 
 - [ ] Confirm the frozen golden vectors and full envelope-shape suite still pass (the new key is additive, default `{}`):
 ```bash
-cd /home/john/warpline && python -m pytest tests/contracts/test_golden_vectors.py tests/test_honesty_invariant.py -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest tests/contracts/test_golden_vectors.py tests/test_honesty_invariant.py -q
 ```
 Expected: all pass (no assertion in those files inspects `enrichment_reasons` yet).
 
 - [ ] Lint + type-check the changed file:
 ```bash
-cd /home/john/warpline && ruff check src/warpline/envelope.py tests/test_envelope_reasons.py && pyright src/warpline/envelope.py
+cd "$(git rev-parse --show-toplevel)" && ruff check src/warpline/envelope.py tests/test_envelope_reasons.py && pyright src/warpline/envelope.py
 ```
 Expected: `All checks passed!` from ruff; `0 errors` from pyright. NOTE: `envelope.py` now imports `listing`. Confirm no import cycle was introduced:
 ```bash
-cd /home/john/warpline && python -c "import warpline.envelope; import warpline.listing; print('no cycle')"
+cd "$(git rev-parse --show-toplevel)" && python -c "import warpline.envelope; import warpline.listing; print('no cycle')"
 ```
 Expected: `no cycle`. (`listing.py` imports only `warpline.errors`, never `envelope`, so the new edge `envelope -> listing` is one-way.)
 
 - [ ] Commit:
 ```bash
-cd /home/john/warpline && git checkout -b harden/honesty-completeness && git add src/warpline/envelope.py tests/test_envelope_reasons.py && git commit -m "feat(envelope): add additive enrichment_reasons carrier for weft-reason triples
+cd "$(git rev-parse --show-toplevel)" && git checkout -b harden/honesty-completeness && git add src/warpline/envelope.py tests/test_envelope_reasons.py && git commit -m "feat(envelope): add additive enrichment_reasons carrier for weft-reason triples
 
 The closed scalar enrichment vocab cannot hold a triple (dict) without
 tripping build_envelope validation, so the cause+reason_class+fix triple
@@ -244,7 +244,7 @@ def test_requirements_is_reserved_but_honest_on_every_tool(tmp_path: Path) -> No
 
 - [ ] Run it and watch it fail:
 ```bash
-cd /home/john/warpline && python -m pytest tests/test_honesty_invariant.py::test_requirements_is_reserved_but_honest_on_every_tool -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest tests/test_honesty_invariant.py::test_requirements_is_reserved_but_honest_on_every_tool -q
 ```
 Expected failure: `KeyError: 'requirements'` (the `enrichment_reasons` map is empty `{}` until `build_envelope` defaults it).
 
@@ -293,7 +293,7 @@ def requirements_reason() -> dict[str, Any]:
 
 - [ ] Confirm `_enrichment.py` still has no cycle (it now imports `listing`, which imports only `errors`):
 ```bash
-cd /home/john/warpline && python -c "import warpline._enrichment; print('ok')"
+cd "$(git rev-parse --show-toplevel)" && python -c "import warpline._enrichment; print('ok')"
 ```
 Expected: `ok`.
 
@@ -309,19 +309,19 @@ This seeds the reserved triple but lets any caller override `requirements` expli
 
 - [ ] Guard against an import cycle. `_enrichment.py` now imports `listing`; `envelope.py` now imports `_enrichment` AND `listing`. None of `listing`/`_enrichment` import `envelope`, so this is acyclic. Verify:
 ```bash
-cd /home/john/warpline && python -c "import warpline.envelope; print('no cycle')"
+cd "$(git rev-parse --show-toplevel)" && python -c "import warpline.envelope; print('no cycle')"
 ```
 Expected: `no cycle`.
 
 - [ ] Run the new test and watch it pass:
 ```bash
-cd /home/john/warpline && python -m pytest tests/test_honesty_invariant.py::test_requirements_is_reserved_but_honest_on_every_tool -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest tests/test_honesty_invariant.py::test_requirements_is_reserved_but_honest_on_every_tool -q
 ```
 Expected: `1 passed`.
 
 - [ ] Confirm the frozen golden vectors still pass (the reserved triple is additive; no vector asserts on `enrichment_reasons` content):
 ```bash
-cd /home/john/warpline && python -m pytest tests/contracts/test_golden_vectors.py tests/test_envelope_reasons.py -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest tests/contracts/test_golden_vectors.py tests/test_envelope_reasons.py -q
 ```
 Expected: GV vectors pass; test_envelope_reasons.py has 1 failure (test_envelope_defaults_enrichment_reasons_to_empty_map) — fixed in the next step. (That Task-1 test calls `build_envelope` with no `enrichment_reasons`, asserting `== {}`; it now gets `{"requirements": ...}`, NOT `{}`. FIX REQUIRED: see next step.)
 
@@ -339,19 +339,19 @@ to:
 ```
 Re-run and confirm:
 ```bash
-cd /home/john/warpline && python -m pytest tests/test_envelope_reasons.py -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest tests/test_envelope_reasons.py -q
 ```
 Expected: `5 passed`.
 
 - [ ] Lint + type-check:
 ```bash
-cd /home/john/warpline && ruff check src/warpline/_enrichment.py src/warpline/envelope.py && pyright src/warpline/_enrichment.py src/warpline/envelope.py
+cd "$(git rev-parse --show-toplevel)" && ruff check src/warpline/_enrichment.py src/warpline/envelope.py && pyright src/warpline/_enrichment.py src/warpline/envelope.py
 ```
 Expected: ruff `All checks passed!`; pyright `0 errors`.
 
 - [ ] Commit:
 ```bash
-cd /home/john/warpline && git add src/warpline/_enrichment.py src/warpline/envelope.py tests/test_honesty_invariant.py tests/test_envelope_reasons.py && git commit -m "feat(enrichment): requirements reserved-but-honest via stable disabled triple
+cd "$(git rev-parse --show-toplevel)" && git add src/warpline/_enrichment.py src/warpline/envelope.py tests/test_honesty_invariant.py tests/test_envelope_reasons.py && git commit -m "feat(enrichment): requirements reserved-but-honest via stable disabled triple
 
 requirements rides as scalar unavailable on every envelope with no
 transport wired. Rather than a bare unexplained scalar, build_envelope now
@@ -420,7 +420,7 @@ def test_requirements_reason_is_stable_disabled() -> None:
 
 - [ ] Run it and watch it fail:
 ```bash
-cd /home/john/warpline && python -m pytest tests/test_enrichment_helpers.py -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest tests/test_enrichment_helpers.py -q
 ```
 Expected failure: `ImportError: cannot import name 'sei_reason' from 'warpline._enrichment'`.
 
@@ -470,19 +470,19 @@ def sei_reason(sei_state: str) -> dict[str, Any] | None:
 
 - [ ] Run the test and watch it pass:
 ```bash
-cd /home/john/warpline && python -m pytest tests/test_enrichment_helpers.py -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest tests/test_enrichment_helpers.py -q
 ```
 Expected: `5 passed`.
 
 - [ ] Lint + type-check:
 ```bash
-cd /home/john/warpline && ruff check src/warpline/_enrichment.py tests/test_enrichment_helpers.py && pyright src/warpline/_enrichment.py
+cd "$(git rev-parse --show-toplevel)" && ruff check src/warpline/_enrichment.py tests/test_enrichment_helpers.py && pyright src/warpline/_enrichment.py
 ```
 Expected: ruff `All checks passed!`; pyright `0 errors`.
 
 - [ ] Commit:
 ```bash
-cd /home/john/warpline && git add src/warpline/_enrichment.py tests/test_enrichment_helpers.py && git commit -m "feat(enrichment): add sei_reason() pure helper (never-resolved vs unreachable)
+cd "$(git rev-parse --show-toplevel)" && git add src/warpline/_enrichment.py tests/test_enrichment_helpers.py && git commit -m "feat(enrichment): add sei_reason() pure helper (never-resolved vs unreachable)
 
 Mirrors the completeness_warnings() pattern: a pure state->carrier mapper.
 sei present -> clean; absent -> unresolved_input (locator never resolved);
@@ -595,7 +595,7 @@ NOTE: the exact `WarplineStore` seeding API used here (`ensure_repo`, `ensure_en
 
 - [ ] Run them and watch them fail:
 ```bash
-cd /home/john/warpline && python -m pytest tests/test_honesty_invariant.py -k "sei_absent or sei_present" -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest tests/test_honesty_invariant.py -k "sei_absent or sei_present" -q
 ```
 Expected failure: `KeyError: 'sei'` on `env["enrichment_reasons"]["sei"]` (only `requirements` is seeded so far).
 
@@ -657,25 +657,25 @@ NOTE: `sei_reason(sei_state)` is non-None for `present`/`absent`, so the dict va
 
 - [ ] Run the new tests and watch them pass:
 ```bash
-cd /home/john/warpline && python -m pytest tests/test_honesty_invariant.py -k "sei_absent or sei_present" -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest tests/test_honesty_invariant.py -k "sei_absent or sei_present" -q
 ```
 Expected: `4 passed`.
 
 - [ ] Confirm GV-LW-5 (the scalar-only sei vector) still passes — the scalar is unchanged, only the triple was added:
 ```bash
-cd /home/john/warpline && python -m pytest "tests/contracts/test_golden_vectors.py::test_gv_lw_5_sei_resolution_present_vs_unavailable" -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest "tests/contracts/test_golden_vectors.py::test_gv_lw_5_sei_resolution_present_vs_unavailable" -q
 ```
 Expected: `1 passed`.
 
 - [ ] Lint + type-check:
 ```bash
-cd /home/john/warpline && ruff check src/warpline/commands.py && pyright src/warpline/commands.py
+cd "$(git rev-parse --show-toplevel)" && ruff check src/warpline/commands.py && pyright src/warpline/commands.py
 ```
 Expected: ruff `All checks passed!`; pyright `0 errors`.
 
 - [ ] Commit:
 ```bash
-cd /home/john/warpline && git add src/warpline/commands.py tests/test_honesty_invariant.py && git commit -m "feat(commands): attach sei weft-reason triple on the three read tools
+cd "$(git rev-parse --show-toplevel)" && git add src/warpline/commands.py tests/test_honesty_invariant.py && git commit -m "feat(commands): attach sei weft-reason triple on the three read tools
 
 change_list, entity_timeline, entity_churn_count now carry a sei triple in
 enrichment_reasons explaining present (clean) vs absent (unresolved_input:
@@ -771,7 +771,7 @@ def test_entity_timeline_governance_present_is_clean_triple(tmp_path: Path) -> N
 
 - [ ] Run them and watch them fail:
 ```bash
-cd /home/john/warpline && python -m pytest tests/test_honesty_invariant.py -k "capture_sei_unavailable or governance" -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest tests/test_honesty_invariant.py -k "capture_sei_unavailable or governance" -q
 ```
 Expected failure: `KeyError: 'sei'` for capture (capture has no `enrichment_reasons` arg yet) and `KeyError: 'governance'` for timeline.
 
@@ -833,25 +833,25 @@ from warpline.listing import (
 
 - [ ] Run the new tests and watch them pass:
 ```bash
-cd /home/john/warpline && python -m pytest tests/test_honesty_invariant.py -k "capture_sei_unavailable or governance" -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest tests/test_honesty_invariant.py -k "capture_sei_unavailable or governance" -q
 ```
 Expected: `3 passed`.
 
 - [ ] Confirm GV-LG-2 (the scalar-only governance vector) and GV-LW-5 still pass:
 ```bash
-cd /home/john/warpline && python -m pytest "tests/contracts/test_golden_vectors.py::test_gv_lg_2_timeline_stitches_across_rename_feed" "tests/contracts/test_golden_vectors.py::test_gv_lw_5_sei_resolution_present_vs_unavailable" -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest "tests/contracts/test_golden_vectors.py::test_gv_lg_2_timeline_stitches_across_rename_feed" "tests/contracts/test_golden_vectors.py::test_gv_lw_5_sei_resolution_present_vs_unavailable" -q
 ```
 Expected: `2 passed`.
 
 - [ ] Lint + type-check:
 ```bash
-cd /home/john/warpline && ruff check src/warpline/commands.py && pyright src/warpline/commands.py
+cd "$(git rev-parse --show-toplevel)" && ruff check src/warpline/commands.py && pyright src/warpline/commands.py
 ```
 Expected: ruff `All checks passed!`; pyright `0 errors`.
 
 - [ ] Commit:
 ```bash
-cd /home/john/warpline && git add src/warpline/commands.py tests/test_honesty_invariant.py && git commit -m "feat(commands): sei unreachable triple on capture + governance triple on timeline
+cd "$(git rev-parse --show-toplevel)" && git add src/warpline/commands.py tests/test_honesty_invariant.py && git commit -m "feat(commands): sei unreachable triple on capture + governance triple on timeline
 
 capture_snapshot (the only sei:unavailable emitter) now carries the
 unreachable triple (Loomweave down). entity_timeline's governance scalar
@@ -948,7 +948,7 @@ def test_gv_rq_1_requirements_is_reserved_but_honest_on_every_tool(tmp_path: Pat
 
 - [ ] Run the new vectors and watch them pass (the implementation already landed in Tasks 2-5; these LOCK it):
 ```bash
-cd /home/john/warpline && python -m pytest tests/contracts/test_golden_vectors.py -k "gv_lw_6 or gv_lg_4 or gv_rq_1" -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest tests/contracts/test_golden_vectors.py -k "gv_lw_6 or gv_lg_4 or gv_rq_1" -q
 ```
 Expected: `3 passed`. (If any fails, the implementation in Tasks 2-5 is incomplete — fix the implementation, NOT the vector.)
 
@@ -965,25 +965,25 @@ Expected: `3 passed`. (If any fails, the implementation in Tasks 2-5 is incomple
 
 - [ ] Validate the JSON fixture parses and now lists 17 vectors:
 ```bash
-cd /home/john/warpline && python -c "import json; v=json.load(open('tests/fixtures/contracts/warpline/golden-vectors.json'))['vectors']; print(len(v)); assert [x['id'] for x in v][-3:]==['GV-LW-6','GV-LG-4','GV-RQ-1']; print('ok')"
+cd "$(git rev-parse --show-toplevel)" && python -c "import json; v=json.load(open('tests/fixtures/contracts/warpline/golden-vectors.json'))['vectors']; print(len(v)); assert [x['id'] for x in v][-3:]==['GV-LW-6','GV-LG-4','GV-RQ-1']; print('ok')"
 ```
 Expected: `17` then `ok`.
 
 - [ ] Run the FULL golden-vector suite to prove nothing in the frozen 14 regressed:
 ```bash
-cd /home/john/warpline && python -m pytest tests/contracts/test_golden_vectors.py -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest tests/contracts/test_golden_vectors.py -q
 ```
 Expected: `17 passed`.
 
 - [ ] Lint the test file:
 ```bash
-cd /home/john/warpline && ruff check tests/contracts/test_golden_vectors.py
+cd "$(git rev-parse --show-toplevel)" && ruff check tests/contracts/test_golden_vectors.py
 ```
 Expected: `All checks passed!`.
 
 - [ ] Commit:
 ```bash
-cd /home/john/warpline && git add tests/contracts/test_golden_vectors.py tests/fixtures/contracts/warpline/golden-vectors.json && git commit -m "test(contracts): lock honesty-completeness as golden vectors GV-LW-6/LG-4/RQ-1
+cd "$(git rev-parse --show-toplevel)" && git add tests/contracts/test_golden_vectors.py tests/fixtures/contracts/warpline/golden-vectors.json && git commit -m "test(contracts): lock honesty-completeness as golden vectors GV-LW-6/LG-4/RQ-1
 
 Extend the frozen 14 to 17: sei absence carries an explained triple
 (unresolved_input vs unreachable), timeline governance carries a triple
@@ -1008,45 +1008,45 @@ Prove the whole change set is honest-complete and breaks nothing the gates prote
 
 - [ ] Run the full pytest suite:
 ```bash
-cd /home/john/warpline && python -m pytest -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest -q
 ```
 Expected: all pass (0 failed). In particular `tests/test_enrichment_merge.py` (the R6 scalar tests at lines 94, 112) stays green because the `risk`/`governance` SCALARS on `reverify_worklist` are unchanged — this plan only adds the `requirements` triple and the read/timeline/capture triples.
 
 - [ ] Run ruff and pyright across the touched modules:
 ```bash
-cd /home/john/warpline && ruff check src/warpline tests && pyright src/warpline
+cd "$(git rev-parse --show-toplevel)" && ruff check src/warpline tests && pyright src/warpline
 ```
 Expected: ruff `All checks passed!`; pyright `0 errors, 0 warnings`.
 
 - [ ] Run the two warpline self-gates the global constraints name:
 ```bash
-cd /home/john/warpline && warpline dogfood-eval && warpline mcp-smoke
+cd "$(git rev-parse --show-toplevel)" && warpline dogfood-eval && warpline mcp-smoke
 ```
 Expected: both exit 0. (`mcp-smoke` exercises the live envelope shape; the additive `enrichment_reasons` key must not trip it. If `mcp-smoke` asserts an exact top-level key set, update its expected key set to include `enrichment_reasons` — that is part of this task, since the carrier is intentionally additive.)
 
 - [ ] Run the member-diff guard to confirm the envelope shape change is the intended additive one:
 ```bash
-cd /home/john/warpline && git diff --stat main...HEAD
+cd "$(git rev-parse --show-toplevel)" && git diff --stat main...HEAD
 ```
 Expected: only `src/warpline/envelope.py`, `src/warpline/_enrichment.py`, `src/warpline/commands.py`, and the test/fixture files changed. If the member-diff guard is a script (check `scripts/` or `Makefile` for `member-diff`), run it:
 ```bash
-cd /home/john/warpline && ls scripts/ 2>/dev/null | grep -i diff; grep -rn "member-diff\|member_diff" Makefile pyproject.toml 2>/dev/null
+cd "$(git rev-parse --show-toplevel)" && ls scripts/ 2>/dev/null | grep -i diff; grep -rn "member-diff\|member_diff" Makefile pyproject.toml 2>/dev/null
 ```
 If a guard command exists, run it and confirm it reports the `enrichment_reasons` addition as an ALLOWED additive change (not a removed/renamed key). If it flags any REMOVED or RENAMED key, the implementation diverged — stop and fix.
 
 - [ ] Confirm the local-only invariant holds on every tool (regression check for the carrier):
 ```bash
-cd /home/john/warpline && python -m pytest "tests/contracts/test_golden_vectors.py::test_gv_lg_3_every_response_is_local_only_with_no_side_effects" -q
+cd "$(git rev-parse --show-toplevel)" && python -m pytest "tests/contracts/test_golden_vectors.py::test_gv_lg_3_every_response_is_local_only_with_no_side_effects" -q
 ```
 Expected: `1 passed`.
 
 - [ ] No commit needed (verification-only). If `mcp-smoke`'s expected key set was edited in this task, commit that:
 ```bash
-cd /home/john/warpline && git status --porcelain
+cd "$(git rev-parse --show-toplevel)" && git status --porcelain
 ```
 If anything is modified, stage and commit:
 ```bash
-cd /home/john/warpline && git add -A && git commit -m "test(gates): allow additive enrichment_reasons key in mcp-smoke expectations
+cd "$(git rev-parse --show-toplevel)" && git add -A && git commit -m "test(gates): allow additive enrichment_reasons key in mcp-smoke expectations
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
