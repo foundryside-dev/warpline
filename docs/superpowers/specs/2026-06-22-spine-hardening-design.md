@@ -21,6 +21,35 @@ A member that emits wrong-but-confident facts is worse than one that emits hones
 absence. The product's entire value is *trustworthy temporal facts*, so the spine
 must be trustworthy **by construction** and **provably** so — not merely patched.
 
+## Reground corrections (post-authoring, 2026-06-22)
+
+Re-grounding each plan against the current branch corrected several premises in this
+spec. The plans carry the corrected understanding; this note keeps the spec honest:
+
+- **The orphan-row / published-empty failures were already neutralized** by commit
+  `127c4fd` ("fix: delay full snapshot publication"). `create_edge_snapshot` upserts
+  on `UNIQUE(repo_id,commit_sha,source)` (one row, not two), and the FULL flip happens
+  after edges commit, so a mid-window reader sees the prior row, or DELTA/0-edges, or
+  FULL-with-edges — never a published-empty row. **The genuine open gap is different:**
+  capture is still three auto-committed transactions, so the invariant holds only by an
+  *emergent* property, and **fail-closed-to-prior-snapshot is violated today** (the
+  step-1 upsert degrades the prior FULL row to DELTA and clears its edges before
+  Loomweave is queried, so a mid-capture death destroys the last good snapshot). Plan A
+  now targets *that* — one `BEGIN IMMEDIATE` capture method that computes completeness
+  before mutating any visible row.
+- **The honesty triple cannot nest in the closed scalar `enrichment` dict** (it is
+  validated value-by-value). Plan B adds a new **top-level `enrichment_reasons`**
+  carrier (sibling of `enrichment`), a map of dimension → `{reason_class, cause, fix}`.
+  This is an additive envelope evolution — within "refine Warpline-owned pre-admission
+  contracts," and itself an entry for the handover's glossary-freeze checklist.
+- **No `reserved` reason_class exists**; Plan B reuses the canonical 11
+  (`requirements` → `disabled` with reserved-flavored cause/fix), leaving the frozen
+  vocab and its guard test untouched.
+- **OD-5 is already resolved** (fold into GS-7 as the 5th producer); the owner action
+  is launch-runbook *wiring*, not adjudication. The governance line at `commands.py`
+  is `:398`, not `:303`. The suite is **13 manifest vectors (14-as-doctrine** — GV-LG-3
+  spans six tools).
+
 ## Goal & non-goals
 
 **Goal:** make the snapshot spine correct-by-construction, honesty-complete, and
