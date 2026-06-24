@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from warpline import __version__
+from warpline._enrichment import requirements_reason
+from warpline.listing import REASON_CLASSES
 
 # FROZEN canonical success envelope (see interface-lock §0). enrichment values
 # are a CLOSED vocabulary; ``absent`` (peer present, no fact) is never conflated
@@ -62,6 +64,7 @@ def build_envelope(
     query: dict[str, Any],
     data: dict[str, Any],
     enrichment: dict[str, str] | None = None,
+    enrichment_reasons: dict[str, dict[str, Any]] | None = None,
     next_actions: dict[str, Any] | None = None,
     warnings: list[str] | None = None,
     peer_side_effects: list[Any] | None = None,
@@ -72,6 +75,17 @@ def build_envelope(
     for key, value in enrich.items():
         if key not in ENRICHMENT_VOCAB or value not in ENRICHMENT_VOCAB[key]:
             raise ValueError(f"enrichment.{key}={value!r} violates the closed vocabulary")
+    reasons = {"requirements": requirements_reason(), **(enrichment_reasons or {})}
+    for dim, carrier in reasons.items():
+        if dim not in ENRICHMENT_VOCAB:
+            raise ValueError(
+                f"enrichment_reasons.{dim} names a dimension outside the closed vocabulary"
+            )
+        if not isinstance(carrier, dict) or carrier.get("reason_class") not in REASON_CLASSES:
+            raise ValueError(
+                f"enrichment_reasons.{dim} must be a listing.reason() triple "
+                f"(a dict carrying a canonical reason_class)"
+            )
     return {
         "schema": schema,
         "ok": True,
@@ -80,5 +94,6 @@ def build_envelope(
         "warnings": warnings or [],
         "next_actions": next_actions or {},
         "enrichment": enrich,
+        "enrichment_reasons": reasons,
         "meta": local_only_meta(peer_side_effects),
     }

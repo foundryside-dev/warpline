@@ -92,15 +92,6 @@ def capture_edge_snapshot(
     if capped:
         query_entities = query_entities[:max_entities]
 
-    snapshot_id = store.create_edge_snapshot(
-        repo_id=repo_id,
-        commit_sha=resolved_commit,
-        source="loomweave",
-        source_version=source_version,
-        completeness="DELTA",
-    )
-    store.clear_snapshot_edges(snapshot_id)
-
     edge_count = 0
     snapshot_edges: list[tuple[int, int, str, str]] = []
     failures: list[dict[str, str]] = list(scope_failures or [])
@@ -120,19 +111,22 @@ def capture_edge_snapshot(
             )
             snapshot_edges.append((source_id, target_id, edge_kind, "resolved"))
             edge_count += 1
-    store.append_snapshot_edges(snapshot_id, snapshot_edges)
     if scope_locators is not None and not query_entities and not failures:
         failures.append({"locator": "<changed_only_scope>", "reason": "empty_scope"})
 
     # A capped capture is structurally partial: it is missing entities it knows
     # exist. Treat that exactly like a per-entity failure — DELTA, not FULL.
+    # Edges are fully staged above; the snapshot row is written exactly once,
+    # atomically, AFTER completeness is known. Any failure raised by the client
+    # propagates BEFORE this write, so the prior snapshot stays intact.
     completeness = "DELTA" if (failures or capped) else "FULL"
-    snapshot_id = store.create_edge_snapshot(
+    snapshot_id = store.capture_snapshot_atomic(
         repo_id=repo_id,
         commit_sha=resolved_commit,
         source="loomweave",
         source_version=source_version,
         completeness=completeness,
+        edges=snapshot_edges,
     )
 
     return {

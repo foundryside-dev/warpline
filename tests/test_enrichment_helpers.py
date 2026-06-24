@@ -1,10 +1,9 @@
 """Characterization tests for the pure staleness/completeness helpers.
 
 Locks the (completeness, staleness) -> enrichment.edges mapping and the
-warning text BEFORE the Rung 0 extraction moves these bodies into
-``warpline._enrichment``. Pure functions, no fixtures. These imports are
-retargeted to ``warpline._enrichment`` in Step 0.2; until then they pin the
-behaviour as it lives in ``warpline.commands``.
+warning text, and the sei_reason / requirements_reason weft-reason helpers.
+Pure functions, no fixtures; these characterize the helpers as they live in
+``warpline._enrichment``.
 """
 
 from __future__ import annotations
@@ -17,6 +16,8 @@ from warpline._enrichment import (
     completeness_warnings,
     edges_enrichment,
     is_stale,
+    requirements_reason,
+    sei_reason,
     staleness_warnings,
 )
 from warpline.store import WarplineStore, default_store_path
@@ -150,3 +151,32 @@ def test_capture_snapshot_maps_edges_via_edges_for_completeness(tmp_path: Path) 
     )
     assert envelope["data"]["completeness"] == "SKIPPED"
     assert envelope["enrichment"]["edges"] == EDGES_FOR_COMPLETENESS["SKIPPED"] == "skipped"
+
+
+# --------------------------------------------------------------------------- sei_reason
+def test_sei_present_is_clean() -> None:
+    assert sei_reason("present") == {"reason_class": "clean"}
+
+
+def test_sei_absent_is_unresolved_input_with_cause_and_fix() -> None:
+    triple = sei_reason("absent")
+    assert triple is not None
+    assert triple["reason_class"] == "unresolved_input"
+    assert "resolv" in triple["cause"].lower()
+    assert triple["fix"]
+
+
+def test_sei_unavailable_is_unreachable_with_cause_and_fix() -> None:
+    triple = sei_reason("unavailable")
+    assert triple is not None
+    assert triple["reason_class"] == "unreachable"
+    assert "loomweave" in triple["cause"].lower()
+    assert triple["fix"]
+
+
+def test_sei_unknown_state_yields_no_triple() -> None:
+    assert sei_reason("bogus") is None
+
+
+def test_requirements_reason_is_stable_disabled() -> None:
+    assert requirements_reason()["reason_class"] == "disabled"

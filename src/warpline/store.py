@@ -1467,6 +1467,79 @@ class WarplineStore:
         self.conn.execute("DELETE FROM snapshot_edges WHERE snapshot_id = ?", (snapshot_id,))
         self.conn.commit()
 
+    def capture_snapshot_atomic(
+        self,
+        *,
+        repo_id: str,
+        commit_sha: str,
+        source: str,
+        source_version: str,
+        completeness: str,
+        edges: list[tuple[int, int, str, str]],
+    ) -> int:
+        """Capture a snapshot correct-by-construction in ONE transaction.
+
+        Precondition: callers must not hold an open implicit transaction on
+        ``self.conn`` — every preceding DML (e.g. ``ensure_entity_key``) must
+        already be committed before this method is called.
+
+        Upserts the ``edge_snapshots`` row, replaces its edges, and sets the
+        final ``completeness`` inside a single ``BEGIN IMMEDIATE``..``COMMIT``.
+        No intermediate COMMIT is issued, so a reader on another connection (WAL)
+        can never observe a half-written state, and any exception ROLLBACKs the
+        whole transaction — leaving the PRIOR committed snapshot intact (R3 /
+        fail-closed). ``edges`` is fully staged by the caller before this opens;
+        no Loomweave I/O or completeness decision happens inside the txn.
+
+        Mirrors the explicit-transaction convention at
+        ``reresolve_entity_key_sei`` (no reliance on autocommit, no nested
+        per-statement commits).
+        """
+        if completeness not in {"FULL", "DELTA", "SKIPPED"}:
+            raise ValueError(f"invalid snapshot completeness: {completeness}")
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            cur = self.conn.execute(
+                """
+                INSERT INTO edge_snapshots(
+                  repo_id, commit_sha, source, source_version, completeness
+                )
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(repo_id, commit_sha, source) DO UPDATE SET
+                  source_version = excluded.source_version,
+                  completeness = excluded.completeness,
+                  captured_at = CURRENT_TIMESTAMP
+                RETURNING id
+                """,
+                (repo_id, commit_sha, source, source_version, completeness),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise RuntimeError("failed to create edge snapshot")
+            snapshot_id = int(row["id"])
+            # Replace edges wholesale: a re-capture for the same (repo, commit,
+            # source) is a fresh edge set, not an append.
+            self.conn.execute(
+                "DELETE FROM snapshot_edges WHERE snapshot_id = ?", (snapshot_id,)
+            )
+            if edges:
+                self.conn.executemany(
+                    """
+                    INSERT OR IGNORE INTO snapshot_edges(
+                      snapshot_id, source_entity_key_id, target_entity_key_id, edge_kind, confidence
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (snapshot_id, source_id, target_id, edge_kind, confidence)
+                        for source_id, target_id, edge_kind, confidence in edges
+                    ],
+                )
+            self.conn.execute("COMMIT")
+            return snapshot_id
+        except BaseException:
+            self.conn.execute("ROLLBACK")
+            raise
+
     def latest_snapshot(self, repo: Path) -> dict[str, object] | None:
         repo_id = self._repo_id(repo)
         row = self.conn.execute(

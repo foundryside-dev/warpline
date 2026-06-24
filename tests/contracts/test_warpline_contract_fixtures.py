@@ -5,7 +5,7 @@ from pathlib import Path
 
 from warpline.envelope import ENRICHMENT_VOCAB
 
-FIXTURES = Path("tests/fixtures/contracts/warpline")
+FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "contracts" / "warpline"
 
 ENVELOPE_KEYS = {"schema", "ok", "query", "data", "warnings", "next_actions", "enrichment", "meta"}
 
@@ -92,3 +92,11 @@ def test_reverify_response_fixture_carries_honesty_fields() -> None:
     assert isinstance(data["resolved"], list)
     assert isinstance(data["unresolved"], list)
     assert data["next_actions"] == {"filigree": []}
+
+
+def test_fixtures_root_resolves_independent_of_cwd(tmp_path: Path, monkeypatch) -> None:
+    """The fixture root must resolve from the test file location, not the process cwd, so the
+    federation hub can run this suite from any working directory (portability)."""
+    monkeypatch.chdir(tmp_path)
+    assert (FIXTURES / "golden-vectors.json").is_file()
+    assert (FIXTURES / "mcp-tool-inventory.json").is_file()

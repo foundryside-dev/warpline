@@ -61,6 +61,20 @@ class TruncatedNeighborhoodClient:
         }
 
 
+class ExplodingNeighborhoodClient:
+    """Raises a NON-Exception (BaseException) on the FIRST neighborhood call so
+    capture cannot swallow it via its ``except Exception`` per-entity guard
+    (snapshot.py:111). Models a hard mid-capture kill (e.g. Loomweave process
+    crash / KeyboardInterrupt) that must NOT degrade the prior snapshot."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def neighborhood(self, entity: str) -> dict[str, object]:
+        self.calls.append(entity)
+        raise KeyboardInterrupt("loomweave killed mid-capture")
+
+
 class LoomweaveIdNeighborhoodClient:
     def __init__(self) -> None:
         self.calls: list[str] = []
@@ -93,18 +107,18 @@ class BatchOnlyStore:
             {"id": 3, "locator": "python:function:c", "sei": None},
         ]
 
-    def create_edge_snapshot(
+    def capture_snapshot_atomic(
         self,
+        *,
         repo_id: str,
         commit_sha: str,
         source: str,
         source_version: str,
         completeness: str,
+        edges: list[tuple[int, int, str, str]],
     ) -> int:
+        self.batches.append(list(edges))
         return 10
-
-    def clear_snapshot_edges(self, snapshot_id: int) -> None:
-        return None
 
     def ensure_entity_key(
         self,
@@ -124,14 +138,12 @@ class BatchOnlyStore:
         edge_kind: str,
         confidence: str,
     ) -> None:
-        raise AssertionError("capture should batch snapshot edge writes")
+        raise AssertionError("capture should batch via capture_snapshot_atomic")
 
-    def append_snapshot_edges(
-        self,
-        snapshot_id: int,
-        edges: list[tuple[int, int, str, str]],
-    ) -> None:
-        self.batches.append(list(edges))
+    def clear_snapshot_edges(self, snapshot_id: int) -> None:
+        raise AssertionError(
+            "SKIPPED path (client is None) must not be exercised through BatchOnlyStore"
+        )
 
 
 def test_skipped_snapshot_is_queryable(tmp_path: Path) -> None:
@@ -361,3 +373,109 @@ def test_capture_edge_snapshot_degrades_truncated_neighborhood_to_delta(
     ]
     assert snapshot["completeness"] == "DELTA"
     assert edges == []
+
+
+def test_capture_failure_preserves_prior_full_snapshot(tmp_path: Path) -> None:
+    """Fail-closed: a hard mid-capture failure leaves the PRIOR FULL snapshot
+    (and its edges) intact and visible, never a degraded DELTA/0-edge row."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    db_path = tmp_path / "warpline.db"
+
+    # First capture: a clean FULL snapshot with one edge.
+    with WarplineStore.open(db_path) as store:
+        repo_id = store.ensure_repo(repo)
+        store.ensure_entity_key(repo_id, locator="python:function:a", sei=None, commit_sha="c1")
+        first = capture_edge_snapshot(
+            store, repo, commit_sha="c1", client=FakeNeighborhoodClient(),
+            source_version="v1",
+        )
+        prior = store.latest_snapshot(repo)
+        assert prior is not None
+        prior_id = int(prior["id"])
+        prior_edges = store.snapshot_edges(prior_id)
+    assert first["completeness"] == "FULL"
+    assert len(prior_edges) == 1
+
+    # Second capture for the SAME (repo, commit) dies mid-loop.
+    with WarplineStore.open(db_path) as store:
+        try:
+            capture_edge_snapshot(
+                store, repo, commit_sha="c1", client=ExplodingNeighborhoodClient(),
+                source_version="v2",
+            )
+        except KeyboardInterrupt:
+            pass
+
+    # The prior FULL snapshot must survive unchanged.
+    with WarplineStore.open(db_path) as store:
+        after = store.latest_snapshot(repo)
+        assert after is not None
+        after_edges = store.snapshot_edges(int(after["id"]))
+    assert after["id"] == prior_id
+    assert after["completeness"] == "FULL"
+    assert after["source_version"] == "v1"
+    assert len(after_edges) == 1
+
+
+def test_capture_snapshot_atomic_replaces_edges_in_one_transaction(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    with WarplineStore.open(tmp_path / "warpline.db") as store:
+        repo_id = store.ensure_repo(repo)
+        a = store.ensure_entity_key(repo_id, locator="python:function:a", sei=None, commit_sha="c1")
+        b = store.ensure_entity_key(repo_id, locator="python:function:b", sei=None, commit_sha="c1")
+
+        sid1 = store.capture_snapshot_atomic(
+            repo_id=repo_id, commit_sha="c1", source="loomweave",
+            source_version="v1", completeness="FULL",
+            edges=[(a, b, "calls", "resolved")],
+        )
+        assert store.latest_snapshot(repo)["completeness"] == "FULL"
+        assert len(store.snapshot_edges(sid1)) == 1
+
+        # Re-capture same (repo, commit, source): same id, edges REPLACED not appended.
+        sid2 = store.capture_snapshot_atomic(
+            repo_id=repo_id, commit_sha="c1", source="loomweave",
+            source_version="v2", completeness="DELTA",
+            edges=[(b, a, "calls", "resolved")],
+        )
+        assert sid2 == sid1
+        snap = store.latest_snapshot(repo)
+        assert snap["completeness"] == "DELTA"
+        assert snap["source_version"] == "v2"
+        edges = store.snapshot_edges(sid2)
+    assert edges == [
+        {"source_entity_key_id": b, "target_entity_key_id": a,
+         "edge_kind": "calls", "confidence": "resolved"}
+    ]
+
+
+def test_capped_capture_publishes_single_delta_row(tmp_path: Path) -> None:
+    """A max_entities-capped capture writes exactly one DELTA row, atomically,
+    with its edges present — never a transient FULL or empty row."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    with WarplineStore.open(tmp_path / "warpline.db") as store:
+        repo_id = store.ensure_repo(repo)
+        store.ensure_entity_key(
+            repo_id, locator="python:function:a", sei=None, commit_sha="c1"
+        )
+        store.ensure_entity_key(
+            repo_id, locator="python:function:z", sei=None, commit_sha="c1"
+        )
+        result = capture_edge_snapshot(
+            store, repo, commit_sha="c1", client=FakeNeighborhoodClient(),
+            source_version="v1", max_entities=1,
+        )
+        snap = store.latest_snapshot(repo)
+        assert snap is not None
+        edges = store.snapshot_edges(int(snap["id"]))
+
+    assert result["capped"] is True
+    assert result["completeness"] == "DELTA"
+    assert snap["completeness"] == "DELTA"
+    # The single queried entity ("python:function:a", sorted first) yields its
+    # one edge; the row is published WITH that edge, not empty.
+    assert result["edges"] == 1
+    assert len(edges) == 1
