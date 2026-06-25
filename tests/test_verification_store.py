@@ -35,20 +35,53 @@ def test_reopen_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_presence_floor_recovers_dropped_table(tmp_path: Path) -> None:
+    """#9: a v4 marker claiming the schema but missing verification_events floors
+    to v3 and re-runs the v4 migration via the user_version==0 reconcile path.
+
+    This exercises the SAME presence-floor recovery the runner already guards for
+    v3 (see test_inflated_meta_without_schema_objects_reruns_migrations): forge a
+    DB whose meta marker CLAIMS v4 but whose verification_events table is gone,
+    with user_version=0 so the reconcile path runs. The v2 anchor columns and v3
+    co_change_pairs table are left intact, so the floor lands at exactly 3 and
+    only the v4 migration re-runs.
+    """
+
     path = default_store_path(tmp_path)
+    # Materialize the full v4 schema, then forge the dropped-table scenario.
     with WarplineStore.open(path) as store:
-        pass
-    # Simulate a v4 marker whose table is missing on disk: drop it and lie in meta.
+        assert store.schema_version() == 4
     raw = sqlite3.connect(path)
+    raw.row_factory = sqlite3.Row
     raw.execute("DROP TABLE verification_events")
+    # Claim v4 in meta but reset user_version to 0 so the reconcile path runs.
+    raw.execute("UPDATE meta SET value = '4' WHERE key = 'schema_version'")
+    raw.execute("PRAGMA user_version = 0")
     raw.commit()
+    # v2/v3 objects must remain intact so only v4 re-runs (not v2/v3).
+    cols_before = {r["name"] for r in raw.execute("PRAGMA table_info(change_events)")}
+    assert {"detected_branch", "detected_context"} <= cols_before
+    tables_before = {
+        str(r[0])
+        for r in raw.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    assert "co_change_pairs" in tables_before
+    assert "verification_events" not in tables_before
     raw.close()
-    # Re-open: presence-floor must detect the missing table and re-run v4.
+
+    # Re-open: presence-floor floors to v3 and re-runs v4.
     with WarplineStore.open(path) as store:
+        assert store.schema_version() == 4
         row = store.conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='verification_events'"
         ).fetchone()
         assert row is not None
+        # v2/v3 objects were NOT collaterally dropped or rebuilt-from-empty in a way
+        # that loses data: co_change_pairs still exists and anchor columns persist.
+        assert store.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='co_change_pairs'"
+        ).fetchone() is not None
+        cols_after = {r["name"] for r in store.conn.execute("PRAGMA table_info(change_events)")}
+        assert {"detected_branch", "detected_context"} <= cols_after
 
 
 def test_record_and_list_round_trip(tmp_path: Path) -> None:

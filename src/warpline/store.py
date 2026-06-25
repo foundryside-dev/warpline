@@ -356,30 +356,6 @@ def _schema_presence_floor(conn: sqlite3.Connection, claimed: int) -> int:
     return claimed
 
 
-_TOP_VERSION_OBJECTS_VERSION = 4  # Must equal HIGHEST_KNOWN_VERSION after migration bump.
-
-
-def _top_version_objects_present(conn: sqlite3.Connection) -> bool:
-    """Check that the artefacts for HIGHEST_KNOWN_VERSION specifically are on disk.
-
-    Used by the non-zero ``user_version`` path of ``_run_migrations`` to guard
-    against externally-dropped tables (corruption, manual tooling, partial
-    restore) without re-scanning lower versions — those were verified by the
-    runner in a prior session that wrote the ``user_version`` marker.
-
-    The caller first checks ``HIGHEST_KNOWN_VERSION == _TOP_VERSION_OBJECTS_VERSION``
-    so this function is only invoked when the running code matches the version it
-    was written for, preventing interference with monkeypatched synthetic-migration
-    tests (which don't create real schema objects for their synthetic version numbers).
-
-    Bump ``_TOP_VERSION_OBJECTS_VERSION`` and the check below alongside each
-    migration bump to ``HIGHEST_KNOWN_VERSION``.
-    """
-
-    # v4 (Rung 2 Track B): the verification_events table.
-    return _table_exists(conn, "verification_events")
-
-
 def _run_migrations(conn: sqlite3.Connection) -> None:
     """Apply ordered forward-only migrations from ``user_version`` to HIGHEST_KNOWN.
 
@@ -475,35 +451,6 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
         return
-
-    # #9 guard for non-zero user_version == HIGHEST_KNOWN_VERSION: user_version
-    # is written by THIS runner, but on-disk objects can be dropped externally
-    # (corruption, manual tooling, partial restore). Only check the top (newest)
-    # migration's artefacts — lower versions were verified by the runner in the
-    # prior session. Guard with _TOP_VERSION_OBJECTS_VERSION so the check is
-    # skipped when HIGHEST_KNOWN_VERSION is monkeypatched to a synthetic value
-    # that doesn't correspond to real schema objects.
-    if (
-        current == HIGHEST_KNOWN_VERSION
-        and HIGHEST_KNOWN_VERSION == _TOP_VERSION_OBJECTS_VERSION
-        and not _top_version_objects_present(conn)
-    ):
-        prior = current - 1
-        logger.warning(
-            "warpline store: user_version=%d but top-version schema objects are "
-            "missing; re-running migrations from v%d",
-            current,
-            prior,
-        )
-        _store_health(
-            conn,
-            "MIGRATION_META_SCHEMA_GAP",
-            f"user_version={current} but top-version objects absent; "
-            f"re-running from {prior}",
-        )
-        conn.execute(f"PRAGMA user_version = {prior}")
-        conn.commit()
-        current = prior
 
     for migration in MIGRATIONS:
         if migration.version <= current:
