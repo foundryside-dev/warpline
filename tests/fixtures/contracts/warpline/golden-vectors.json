@@ -45,7 +45,9 @@
     {"id": "GV-HON-GOV", "seam": "legis", "tool": "warpline_entity_timeline_get",
      "assert": "timeline governance is explained: rename feed -> governance present + enrichment_reasons.governance clean; no feed -> governance unavailable + reason_class disabled"},
     {"id": "GV-HON-REQ", "seam": "all", "tool": "all six",
-     "assert": "reserved requirements dimension carries a stable disabled triple (reserved, not yet wired) on every tool; scalar stays unavailable"}
+     "assert": "reserved requirements dimension carries a stable disabled triple (reserved, not yet wired) on every tool; scalar stays unavailable"},
+    {"id": "GV-VF-1", "seam": "warpline", "tool": "warpline_reverify_worklist_get / warpline_verification_record",
+     "assert": "reverify carries an honest verification block on the DATA item (never the frozen enrichment vocab): no source -> every item unverified + disabled triple + local_source_configured false; record a gate pass at the change commit -> fresh + last_verified_commit set + local_source_configured true; recording verification never removes an item (never-filter); meta.local_only true / peer_side_effects []"}
   ],
   "reserved_shape_inbound": {
     "loomweave": "PROVEN+FROZEN (entity_resolve, entity_neighborhood_get) — real consumption (HX1, capture)",
