@@ -139,6 +139,8 @@ def enrich_blast(
     def view(key_id: Any) -> dict[str, Any]:
         return entity_view(key_rows.get(int(key_id)) if isinstance(key_id, int) else None)
 
+    # Order-preserving: changed[i]/affected[i] map 1:1 to result["changed"][i]/["affected"][i];
+    # reverify's verification key-id alignment depends on this.
     changed = [{"entity": view(row.get("entity_key_id"))} for row in result.get("changed", [])]
     affected = []
     for row in result.get("affected", []):

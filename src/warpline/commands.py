@@ -16,7 +16,7 @@ from warpline._enrichment import (
 from warpline.envelope import build_envelope, enrichment_state
 from warpline.errors import BadRevisionError, InvalidChangedRefsError, MissingRequiredFieldError
 from warpline.federation import LegisClient, RiskClient, consult_federation
-from warpline.git import resolve_commit
+from warpline.git import commits_between, is_ancestor, resolve_commit
 from warpline.listing import (
     apply_filters,
     apply_group_by,
@@ -41,6 +41,7 @@ from warpline.reverify import render_reverify_worklist
 from warpline.siblings import RenameFeed, WorkClient
 from warpline.snapshot import capture_edge_snapshot
 from warpline.store import WarplineStore, default_store_path
+from warpline.verification import compose_verification_freshness
 
 # FROZEN schema URIs (one contract per tool; endorsed name and shim share it).
 SCHEMA_CHANGE_LIST = "warpline.change_list.v1"
@@ -779,17 +780,104 @@ def reverify_worklist(
         changed, affected = enrich_blast(store, repo, result)
         completeness = result["completeness"]
         staleness = result["staleness"]
+
+        # Rung 2 Track B — verification freshness (advisory, never gates).
+        # Align entity_key_id to changed/affected ORDER. enrich_blast preserves
+        # the order of result["changed"]/result["affected"] (verified _blast.py:142-157),
+        # whose rows carry entity_key_id; the FROZEN {locator, sei} entity view never
+        # does. The positional alignment changed[i] <-> changed_key_ids[i] is the
+        # invariant render_reverify_worklist relies on to attach the block.
+        changed_key_ids: list[int | None] = [
+            r.get("entity_key_id") if isinstance(r.get("entity_key_id"), int) else None
+            for r in result.get("changed", [])
+        ]
+        affected_key_ids: list[int | None] = [
+            r.get("entity_key_id") if isinstance(r.get("entity_key_id"), int) else None
+            for r in result.get("affected", [])
+        ]
+        # Load ONLY the worklist's change commits (no full-table scan — push the
+        # entity filter into SQL) and group by key id; load verification events once.
+        worklist_key_ids = [k for k in (*changed_key_ids, *affected_key_ids) if k is not None]
+        verification_events = store.list_verification_events(repo)
+        local_source_configured = len(verification_events) > 0
+        changes_by_key: dict[int, list[str]] = {}
+        for ce in store.list_change_events_for_key_ids(repo, worklist_key_ids):
+            kid = ce.get("entity_key_id")
+            if isinstance(kid, int):
+                sha = str(ce.get("commit_sha"))
+                bucket = changes_by_key.setdefault(kid, [])
+                # One entity can have several change_event rows for the SAME commit
+                # (the UNIQUE key is (repo, entity_key_id, commit_sha, path, change_kind),
+                # not commit_sha alone). Collapse adjacent duplicates (rows are
+                # oldest-first) so the covers() fan-out isn't wasted and
+                # entity_change_commits[-1] stays the true latest distinct commit.
+                if not bucket or bucket[-1] != sha:
+                    bucket.append(sha)
+
+        def _covers(verified_commit: str, change_commit: str) -> bool | None:
+            # NOTE the argument inversion: a change is COVERED by a verification
+            # iff the change commit is an ancestor-or-equal of the verified commit
+            # (the gate ran at/after the change). So covers(verified, change) maps
+            # to is_ancestor(ancestor=change_commit, descendant=verified_commit).
+            return is_ancestor(repo, change_commit, verified_commit)
+
+        def _between(ancestor: str, descendant: str) -> int | None:
+            return commits_between(repo, ancestor, descendant)
+
+        _verif_cache: dict[int, dict[str, Any]] = {}
+
+        def verification_for(kid: int | None) -> dict[str, Any]:
+            # kid is None for an affected row that carried no entity_key_id;
+            # compose([], ...) honestly yields "unverified" (nothing to verify).
+            if kid is None:
+                return compose_verification_freshness([], verification_events, _covers, _between)
+            if kid not in _verif_cache:
+                _verif_cache[kid] = compose_verification_freshness(
+                    changes_by_key.get(kid, []),
+                    verification_events,
+                    _covers,
+                    _between,
+                )
+            return _verif_cache[kid]
+
         items, work_seen, filigree_candidates = render_reverify_worklist(
             changed=changed,
             affected=affected,
             completeness=completeness,
             staleness=staleness,
             work_client=work_client,
+            changed_key_ids=changed_key_ids,
+            affected_key_ids=affected_key_ids,
+            verification_for=verification_for,
         )
         items = apply_filters(items, tool="warpline_reverify_worklist_get", filters=filters)
+        # Advisory: stale-of-trust first. Stable presort run JUST BEFORE apply_sort
+        # so apply_sort stays the PRIMARY key (last stable sort wins) and stale-first
+        # is the secondary tiebreak within ties. Never reorders across the primary
+        # key; never removes an item. Relies on apply_sort being a stable sorted()
+        # (listing.py:332) with a sort_by=None passthrough (listing.py:306).
+        # The sort key is (depth, state_rank) so depth stays the default primary
+        # ordering when apply_sort is a passthrough (sort_by=None) AND stale-first
+        # serves as the secondary tiebreak within same-depth groups.
+        _state_rank = {"stale": 0, "unavailable": 1, "unverified": 2, "fresh": 3}
+        items.sort(
+            key=lambda it: (
+                it.get("depth", 0),
+                _state_rank.get(it["verification"]["state"], 3),
+            )
+        )
         items = apply_sort(
             items, tool="warpline_reverify_worklist_get", sort_by=sort_by, sort_order=sort_order
         )
+        # verification_summary reflects the post-filter, pre-page set (mirrors how
+        # completeness/staleness describe the requested set, not the current page).
+        verification_summary = {
+            "fresh": sum(1 for it in items if it["verification"]["state"] == "fresh"),
+            "stale": sum(1 for it in items if it["verification"]["state"] == "stale"),
+            "unverified": sum(1 for it in items if it["verification"]["state"] == "unverified"),
+            "unavailable": sum(1 for it in items if it["verification"]["state"] == "unavailable"),
+            "local_source_configured": local_source_configured,
+        }
         # group_by buckets the FULL filtered+sorted list (the grouped view is a
         # complete projection, not a page); the flat list still paginates.
         grouped = apply_group_by(items, tool="warpline_reverify_worklist_get", group_by=group_by)
@@ -826,6 +914,7 @@ def reverify_worklist(
         data = {
             "completeness": completeness,
             "staleness": staleness,
+            "verification_summary": verification_summary,
             "resolved": resolved,
             "unresolved": unresolved,
             "items": items,
