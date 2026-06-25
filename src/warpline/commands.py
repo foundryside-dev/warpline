@@ -1196,6 +1196,11 @@ def capture_snapshot(
                     f"CAPPED: max_entities={cap} limited the captured entity set; completeness "
                     "downgraded to DELTA (affected-set is not complete)"
                 )
+            if result.get("recapture_skipped"):
+                warnings.append(
+                    f"PRESERVED: loomweave unavailable; existing {result.get('completeness')} "
+                    f"snapshot @ {result.get('commit_sha')} retained, not refreshed"
+                )
             data = {
                 "snapshot_id": result.get("snapshot_id"),
                 "commit_sha": result.get("commit_sha"),

@@ -293,7 +293,11 @@ def test_capture_edge_snapshot_maps_loomweave_ids_back_to_warpline_keys(tmp_path
     } in edges
 
 
-def test_capture_edge_snapshot_clears_edges_on_recapture(tmp_path: Path) -> None:
+def test_capture_skipped_preserves_prior_full_snapshot(tmp_path: Path) -> None:
+    """Loomweave absent at re-capture must NOT downgrade a usable prior FULL
+    snapshot to a 0-edge SKIPPED row (R3 data-loss). The prior graph is real;
+    overwriting it with "we don't know" is strictly worse. Preserve it intact
+    and report the recapture as skipped (fail-closed / enrich-only doctrine)."""
     repo = tmp_path / "repo"
     repo.mkdir()
     with WarplineStore.open(tmp_path / "warpline.db") as store:
@@ -304,29 +308,97 @@ def test_capture_edge_snapshot_clears_edges_on_recapture(tmp_path: Path) -> None
         b = store.ensure_entity_key(
             repo_id, locator="python:function:b", sei=None, commit_sha="c1"
         )
-        snapshot_id = store.create_edge_snapshot(repo_id, "c1", "loomweave", "old", "FULL")
+        prior_id = store.create_edge_snapshot(repo_id, "c1", "loomweave", "old", "FULL")
         store.append_snapshot_edge(
-            snapshot_id,
+            prior_id,
             source_entity_key_id=a,
             target_entity_key_id=b,
             edge_kind="calls",
             confidence="resolved",
         )
 
-        capture_edge_snapshot(
+        result = capture_edge_snapshot(
             store,
             repo,
             commit_sha="c1",
             client=None,
             source_version="no_index",
         )
-        edges = store.snapshot_edges(snapshot_id)
+        edges = store.snapshot_edges(prior_id)
         snapshot = store.latest_snapshot(repo)
 
-    assert edges == []
+    # The prior FULL snapshot and its edge survive untouched.
+    assert len(edges) == 1
     assert snapshot is not None
+    assert int(snapshot["id"]) == prior_id
+    assert snapshot["completeness"] == "FULL"
+    assert snapshot["source_version"] == "old"
+    # The capture result honestly reports the preserved row, not a fresh SKIPPED.
+    assert result["snapshot_id"] == prior_id
+    assert result["completeness"] == "FULL"
+    assert result["recapture_skipped"] is True
+    assert result["entities"] == 0
+    assert result["edges"] == 0
+
+
+def test_capture_skipped_preserves_prior_delta_snapshot(tmp_path: Path) -> None:
+    """A partial-but-real DELTA prior is also preserved (not downgraded to
+    SKIPPED) when loomweave is absent at re-capture — its edges are still real."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    with WarplineStore.open(tmp_path / "warpline.db") as store:
+        repo_id = store.ensure_repo(repo)
+        a = store.ensure_entity_key(
+            repo_id, locator="python:function:a", sei=None, commit_sha="c1"
+        )
+        b = store.ensure_entity_key(
+            repo_id, locator="python:function:b", sei=None, commit_sha="c1"
+        )
+        prior_id = store.create_edge_snapshot(repo_id, "c1", "loomweave", "old", "DELTA")
+        store.append_snapshot_edge(
+            prior_id,
+            source_entity_key_id=a,
+            target_entity_key_id=b,
+            edge_kind="calls",
+            confidence="resolved",
+        )
+
+        result = capture_edge_snapshot(
+            store, repo, commit_sha="c1", client=None, source_version="no_index"
+        )
+        edges = store.snapshot_edges(prior_id)
+        snapshot = store.latest_snapshot(repo)
+
+    assert len(edges) == 1
+    assert snapshot is not None
+    assert snapshot["completeness"] == "DELTA"
+    assert snapshot["source_version"] == "old"
+    assert result["completeness"] == "DELTA"
+    assert result["recapture_skipped"] is True
+
+
+def test_capture_skipped_without_prior_writes_skipped_atomically(tmp_path: Path) -> None:
+    """With no usable prior, a loomweave-absent capture records a single SKIPPED
+    row (no edges), written in one transaction — not the old two-commit
+    (UPSERT then DELETE) dance. There is nothing to corrupt, so SKIPPED is the
+    honest 'we have nothing' marker here."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    with WarplineStore.open(tmp_path / "warpline.db") as store:
+        repo_id = store.ensure_repo(repo)
+        result = capture_edge_snapshot(
+            store, repo, commit_sha="c1", client=None, source_version="no_index"
+        )
+        snapshot = store.latest_snapshot(repo)
+        assert snapshot is not None
+        edges = store.snapshot_edges(int(snapshot["id"]))
+
     assert snapshot["completeness"] == "SKIPPED"
     assert snapshot["source_version"] == "no_index"
+    assert edges == []
+    assert result["completeness"] == "SKIPPED"
+    assert result["snapshot_id"] == int(snapshot["id"])
+    assert "recapture_skipped" not in result
 
 
 def test_capture_edge_snapshot_batches_edge_writes(tmp_path: Path) -> None:

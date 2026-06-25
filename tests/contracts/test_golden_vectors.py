@@ -190,7 +190,13 @@ def test_gv_lw_3_capture_full_then_skipped(tmp_path: Path) -> None:
     assert full["completeness"] == "FULL"
     assert full["edges"] > 0
 
-    skipped = commands.capture_snapshot(repo, commit="c1", loomweave_command="/no/such/loomweave")
+    # The frozen contract is "loomweave absent -> SKIPPED" for a commit with no
+    # usable prior. Exercise it at a DISTINCT commit (c2), not c1: re-capturing
+    # c1 (which already holds the FULL above) must PRESERVE that snapshot, never
+    # downgrade it to a 0-edge SKIPPED row — that is the GV-LW-6 fail-closed
+    # doctrine (a loomweave-absent recapture is the same data-loss class as a
+    # mid-capture kill), and is locked by test_capture_skipped_preserves_prior_*.
+    skipped = commands.capture_snapshot(repo, commit="c2", loomweave_command="/no/such/loomweave")
     assert skipped["data"]["completeness"] == "SKIPPED"
     assert skipped["data"]["edges"] == 0
     assert skipped["enrichment"]["edges"] == "skipped"

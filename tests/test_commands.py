@@ -75,6 +75,65 @@ def test_cli_capture_snapshot_degrades_without_loomweave(
     assert payload["meta"]["peer_side_effects"] == []
 
 
+def test_cli_capture_snapshot_preserves_prior_when_loomweave_absent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """When loomweave is unavailable at re-capture but a usable prior FULL
+    snapshot already describes this commit, the capture must preserve it (not
+    downgrade to SKIPPED) and surface a PRESERVED warning. The stored graph and
+    its edges survive; read tools keep seeing FULL."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    with WarplineStore.open(default_store_path(repo)) as store:
+        repo_id = store.ensure_repo(repo)
+        a = store.ensure_entity_key(
+            repo_id, locator="python:function:a", sei=None, commit_sha="c1"
+        )
+        b = store.ensure_entity_key(
+            repo_id, locator="python:function:b", sei=None, commit_sha="c1"
+        )
+        prior_id = store.create_edge_snapshot(repo_id, "c1", "loomweave", "v1", "FULL")
+        store.append_snapshot_edge(
+            prior_id,
+            source_entity_key_id=a,
+            target_entity_key_id=b,
+            edge_kind="calls",
+            confidence="resolved",
+        )
+
+    assert (
+        cli.main(
+            [
+                "capture-snapshot",
+                "--repo",
+                str(repo),
+                "--commit",
+                "c1",
+                "--loomweave-command",
+                "/no/such/loomweave",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["data"]["completeness"] == "FULL"
+    assert payload["data"]["edges"] == 0
+    assert payload["data"]["snapshot_id"] == prior_id
+    assert any(w.startswith("PRESERVED:") for w in payload["warnings"])
+    # enrichment honesty: the graph is real (present), the SEI peer was down.
+    assert payload["enrichment"]["edges"] == "present"
+    assert payload["enrichment"]["sei"] == "unavailable"
+
+    # The stored FULL snapshot and its edge are untouched.
+    with WarplineStore.open(default_store_path(repo)) as store:
+        after = store.latest_snapshot(repo)
+        assert after is not None
+        assert int(after["id"]) == prior_id
+        assert after["completeness"] == "FULL"
+        assert len(store.snapshot_edges(prior_id)) == 1
+
+
 def test_cli_backfill_with_resolve_sei_degrades_without_loomweave(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

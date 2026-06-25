@@ -1662,6 +1662,28 @@ class WarplineStore:
             self.conn.execute("ROLLBACK")
             raise
 
+    def get_edge_snapshot(
+        self, repo_id: str, commit_sha: str, source: str
+    ) -> dict[str, object] | None:
+        """Fetch the snapshot row for an exact ``(repo, commit, source)`` key.
+
+        The UPSERT key is ``(repo_id, commit_sha, source)``, so this returns the
+        at-most-one row that a recapture for that triple would overwrite — the
+        precondition the loomweave-absent path needs to decide whether a usable
+        prior already exists (vs. ``latest_snapshot``, which is repo-latest by id
+        and answers a different question).
+        """
+
+        row = self.conn.execute(
+            """
+            SELECT id, commit_sha, source, source_version, captured_at, completeness
+              FROM edge_snapshots
+             WHERE repo_id = ? AND commit_sha = ? AND source = ?
+            """,
+            (repo_id, commit_sha, source),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
     def latest_snapshot(self, repo: Path) -> dict[str, object] | None:
         repo_id = self._repo_id(repo)
         row = self.conn.execute(

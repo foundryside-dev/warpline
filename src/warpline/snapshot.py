@@ -13,6 +13,14 @@ class NeighborhoodClient(Protocol):
         ...
 
 
+def _as_int(value: object) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return int(value)
+    raise TypeError(f"expected integer-compatible value, got {type(value).__name__}")
+
+
 def _resolve_commit(repo: Path, commit: str | None) -> str:
     rev = commit if commit is not None else "HEAD"
     proc = subprocess.run(
@@ -56,8 +64,42 @@ def capture_edge_snapshot(
     repo_id = store.ensure_repo(repo)
     resolved_commit = _resolve_commit(repo, commit_sha)
     if client is None:
-        snapshot_id = record_skipped_snapshot(store, repo_id, resolved_commit, source_version)
-        store.clear_snapshot_edges(snapshot_id)
+        prior = store.get_edge_snapshot(repo_id, resolved_commit, "loomweave")
+        if prior is not None and prior.get("completeness") in {"FULL", "DELTA"}:
+            # Loomweave is absent at re-capture, but a usable prior snapshot
+            # already describes this immutable commit. Overwriting it with a
+            # 0-edge SKIPPED row would destroy a real edge graph to record "we
+            # don't know" — strictly worse than what we already hold, and the
+            # same R3 data-loss the atomic capture path was built to prevent.
+            # Leave the stored row and its edges untouched; report the recapture
+            # as skipped against the preserved snapshot (fail-closed doctrine).
+            # A stale FULL/DELTA is still a real graph, so we preserve regardless
+            # of staleness — the read path downgrades stale completeness on its
+            # own (PDR-0023).
+            return {
+                "query": "capture_snapshot",
+                "commit_sha": resolved_commit,
+                "snapshot_id": _as_int(prior["id"]),
+                "source": "loomweave",
+                "source_version": prior.get("source_version"),
+                "completeness": prior.get("completeness"),
+                "entities": 0,
+                "edges": 0,
+                "capped": False,
+                "recapture_skipped": True,
+                "enrichment": {"edges": "skipped"},
+            }
+        # No usable prior (none, or a prior already SKIPPED): record the skip in
+        # ONE transaction via the atomic path. There is nothing to corrupt, and
+        # this retires the old two-commit (UPSERT then DELETE) non-atomic write.
+        snapshot_id = store.capture_snapshot_atomic(
+            repo_id=repo_id,
+            commit_sha=resolved_commit,
+            source="loomweave",
+            source_version=source_version,
+            completeness="SKIPPED",
+            edges=[],
+        )
         return {
             "query": "capture_snapshot",
             "commit_sha": resolved_commit,
