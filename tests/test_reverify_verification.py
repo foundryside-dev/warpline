@@ -274,19 +274,22 @@ def test_stale_first_is_secondary_to_an_explicit_sort(tmp_path: Path) -> None:
     #
     # Layout:
     #   X (depth=0, changed, FRESH): changed at c0, verified at c0
+    #   Z (depth=0, changed, STALE): changed at c0 and c1 (after verification)
     #   Y (depth=1, downstream, STALE): changed at c0, then at c1 (after verification)
     #
-    # With default sort (depth asc), X (depth=0) must precede Y (depth=1)
+    # With default sort (depth asc), both X and Z (depth=0) must precede Y (depth=1)
     # even though Y is stale and X is fresh. This proves stale-first advisory
     # sort is the SECONDARY key (within ties), not the primary key.
+    #
+    # Within depth=0, Z (stale) must precede X (fresh) — this is assertion (c).
     #
     # If the presort were placed AFTER apply_sort instead of before, apply_sort
     # would undo the depth ordering and this assertion would fail.
     repo = _repo(tmp_path)
     c0 = _commit(repo, "x.py", "v0\n")
-    # Verify at c0 so X is fresh, Y still has a later change (c1) -> stale.
+    # Verify at c0 so X is fresh; Z and Y both have a later change (c1) -> stale.
     commands.verify_record(repo, commit=c0, kind="test_pass", now="2026-06-25T10:00:00+00:00")
-    c1 = _commit(repo, "y.py", "v1\n")  # later commit; Y changes AFTER verification
+    c1 = _commit(repo, "y.py", "v1\n")  # later commit; Z and Y change AFTER verification
     head = c1
     with WarplineStore.open(default_store_path(repo)) as store:
         repo_id = store.ensure_repo(repo)
@@ -296,6 +299,13 @@ def test_stale_first_is_secondary_to_an_explicit_sort(tmp_path: Path) -> None:
             repo_id=repo_id, entity_key_id=x, commit_sha=c0, path="x.py",
             change_kind="modified", actor="dev", changed_at="2026-06-25T08:00:00+00:00",
         )
+        # Z: depth=0, changed entity — stale (changed at c0 and c1, only c0 covered)
+        z = store.ensure_entity_key(repo_id, "python:function:z.py::fz", None, c0)
+        for sha in (c0, c1):
+            store.append_change_event(
+                repo_id=repo_id, entity_key_id=z, commit_sha=sha, path="z.py",
+                change_kind="modified", actor="dev", changed_at="2026-06-25T08:00:00+00:00",
+            )
         # Y: depth=1, downstream entity — stale (changed at c0 and c1, only c0 covered)
         y = store.ensure_entity_key(repo_id, "python:function:y.py::fy", None, c0)
         for sha in (c0, c1):
@@ -311,7 +321,7 @@ def test_stale_first_is_secondary_to_an_explicit_sort(tmp_path: Path) -> None:
             edge_kind="calls", confidence="resolved",
         )
         x_id = x
-    env = commands.reverify_worklist(repo, [x_id], depth=2)
+    env = commands.reverify_worklist(repo, [x_id, z], depth=2)
     items = env["data"]["items"]
     depths = [it["depth"] for it in items]
     states = [it["verification"]["state"] for it in items]
@@ -320,14 +330,29 @@ def test_stale_first_is_secondary_to_an_explicit_sort(tmp_path: Path) -> None:
     assert depths == sorted(depths), f"depth ordering violated: {depths}"
 
     # (b) depth-0 fresh item precedes depth-1 stale item
-    x_item = next((it for it in items if it["depth"] == 0), None)
+    x_item = next(
+        (it for it in items if it["depth"] == 0 and it["verification"]["state"] == "fresh"), None
+    )
     y_item = next((it for it in items if it["depth"] == 1), None)
-    assert x_item is not None, "expected depth-0 item (X)"
+    z_item = next(
+        (it for it in items if it["depth"] == 0 and it["verification"]["state"] == "stale"), None
+    )
+    assert x_item is not None, "expected depth-0 fresh item (X)"
+    assert z_item is not None, "expected depth-0 stale item (Z)"
     assert y_item is not None, "expected depth-1 item (Y)"
     assert items.index(x_item) < items.index(y_item), (
         "stale-first presort must NOT override depth primary key"
     )
+    assert items.index(z_item) < items.index(y_item), (
+        "depth-0 stale item must precede depth-1 item"
+    )
 
-    # (c) Record what states we saw — X fresh, Y stale
+    # (c) within depth=0, stale (Z) precedes fresh (X) — same-depth tiebreak
+    assert items.index(z_item) < items.index(x_item), (
+        "within depth=0, stale item Z must precede fresh item X"
+    )
+
+    # Verify the states we observed
     assert x_item["verification"]["state"] == "fresh", f"X should be fresh, got {states}"
+    assert z_item["verification"]["state"] == "stale", f"Z should be stale, got {states}"
     assert y_item["verification"]["state"] == "stale", f"Y should be stale, got {states}"
