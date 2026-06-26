@@ -139,7 +139,7 @@ const LIMITS = [
         enhancement you can act on or ignore — never a verdict you must clear.
         Warpline <strong>consumes</strong> Loomweave <code>SEI</code> and never mints identity;
         it <strong>feeds</strong> advisory change-impact facts to governance-style surfaces
-        (Legis / Charter), which run their own policy. Warpline supplies the facts
+        (Legis / Plainweave), which run their own policy. Warpline supplies the facts
         and never makes the call.
       </Banner>
     </div>
@@ -300,6 +300,18 @@ const LIMITS = [
       <Banner client:visible tone="warn" title="The seams that have not shipped are not presented as working.">
         Warpline is production-stable for its own surface, and scrupulously honest
         about what is wired and what is not. Read these before you wire it in.
+      </Banner>
+      <Banner client:visible tone="danger" title="Not a security boundary — change-impact coordinates, it does not authorize.">
+        A blast-radius answer and the re-verify worklist are <strong>advisory
+        deconfliction</strong> — they tell an agent what a change may touch and what to
+        recheck, never who may make a change, whether one is allowed, or whether a record
+        may be trusted. Warpline is <strong>not an access-control gate, an authorization
+        control, or a compliance boundary</strong>; its change history lives under
+        <code>.weft/warpline/</code> and is not encrypted, sandboxed, or hardened beyond
+        ordinary filesystem permissions. Any tamper-evident governance record lives in
+        <strong>Legis</strong>, dialed up per repo. Warpline is deconfliction-first, not
+        security: do not use it for secure, regulated, confidential, or business-sensitive
+        data.
       </Banner>
       <ul class="limits">
         {LIMITS.map((l) => <li set:html={l.replace(/\*([^*]+)\*/g, '<em>$1</em>')}></li>)}
