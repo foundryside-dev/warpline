@@ -1,12 +1,12 @@
 """legis governance_read.v1 — warpline's mirrored consumer contract.
 
-legis OWNS this contract; warpline mirrors it at
+legis OWNS this contract; warpline mirrors it BYTE-FOR-BYTE at
 ``contracts/governance_read.v1.schema.json`` as the source of truth for its
-advisory ``LegisGovernanceClient``. These vectors are the contract's CANONICAL
-LITERAL SAMPLES (from the legis-authored spec) — NOT a live capture: at the time
-of writing the installed legis exposes no ``governance-read`` verb yet, so there
-is no running surface to capture from. They validate the mirrored schema is a
-faithful, well-formed copy of what the consumer will parse.
+advisory ``LegisGovernanceClient``. Two vector sources: the contract's CANONICAL
+LITERAL SAMPLES (from the legis-authored spec, exercising every union arm), and a
+REAL legis-produced envelope vendored verbatim from legis's conformance golden
+(``legis-governance-read.golden.json``) — the interface-agreement guard that fails
+loud if legis's emitted shape and warpline's consumed shape ever diverge.
 """
 
 from __future__ import annotations
@@ -69,8 +69,29 @@ UNAVAILABLE = {
 }
 
 
+_GOLDEN_PATH = _ROOT / "tests" / "fixtures" / "contracts" / "warpline" / (
+    "legis-governance-read.golden.json"
+)
+
+
 def test_schema_is_wellformed_draft_2020_12() -> None:
     jsonschema.Draft202012Validator.check_schema(_schema())
+
+
+def test_real_legis_golden_envelope_validates_and_parses() -> None:
+    """Cross-member conformance: a REAL legis-produced governance_read.v1 envelope
+    (vendored verbatim from legis's conformance golden) validates against warpline's
+    mirrored schema AND round-trips through the consumer's parse contract. This is
+    the interface-agreement guard — it fails loud if legis's emitted shape and
+    warpline's consumed shape ever diverge."""
+
+    golden = json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
+    _validate(golden)
+    assert golden["status"] == "checked"
+    records = [r for r in golden["records"] if isinstance(r, dict)]
+    assert records, "golden carries at least one verified clearance"
+    assert {r["disposition"] for r in records} == {"cleared"}
+    assert {r["posture"] for r in records} <= {"protected_override", "operator_signoff"}
 
 
 def test_canonical_samples_validate() -> None:

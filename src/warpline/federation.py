@@ -109,7 +109,7 @@ class WardlineDossierClient:
 
 
 # ---------------------------------------------------------------------------
-# legis read transport — `legis governance-read <SEI> --json` (governance_read.v1)
+# legis read transport — `legis governance-read <SEI>` (governance_read.v1; JSON-only)
 # ---------------------------------------------------------------------------
 class LegisGovernanceUnavailable(Exception):
     """legis could not produce a signature-verifiable governance read.
@@ -169,8 +169,11 @@ class LegisGovernanceClient:
 
     def governance_for_sei(self, sei: str) -> list[dict[str, Any]]:
         try:
+            # `legis governance-read <SEI>` — output is ALWAYS JSON (no `--json`
+            # flag; passing one is an argparse error -> nonzero exit). Matches
+            # legis's shipped CLI contract (legis src/legis/cli.py).
             proc = subprocess.run(
-                [self.command, "governance-read", sei, "--json"],
+                [self.command, "governance-read", sei],
                 cwd=self.repo,
                 check=True,
                 text=True,

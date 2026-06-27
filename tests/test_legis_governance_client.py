@@ -66,6 +66,22 @@ def test_client_satisfies_legis_client_protocol() -> None:
     assert callable(client.governance_for_sei)
 
 
+def test_invokes_legis_governance_read_without_json_flag(monkeypatch) -> None:
+    # legis's shipped CLI is `legis governance-read <SEI>` with output ALWAYS JSON;
+    # a `--json` flag is an argparse error (nonzero exit). Pin the exact argv so the
+    # invocation form can never drift back out of sync with legis.
+    seen: dict[str, Any] = {}
+
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        return _FakeProc(stdout=json.dumps(_CHECKED))
+
+    _patch(monkeypatch, fake_run)
+    LegisGovernanceClient(Path("/repo"), command="legis").governance_for_sei(_SEI)
+    assert seen["cmd"] == ["legis", "governance-read", _SEI]
+    assert "--json" not in seen["cmd"]
+
+
 # --- status=checked -----------------------------------------------------------
 def test_checked_with_records_returns_them(monkeypatch) -> None:
     _patch(monkeypatch, _read_run(_CHECKED))

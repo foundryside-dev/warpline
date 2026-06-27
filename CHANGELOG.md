@@ -13,7 +13,8 @@ is a new contract URI, never a mutation of `v1`.
 ### Added
 - **legis governance read consumer (`governance_read.v1`).** `reverify
   --include_federation` now lights up the previously-inert `legis` member with a
-  real `LegisGovernanceClient` over the `legis governance-read <SEI> --json` verb,
+  real `LegisGovernanceClient` over the `legis governance-read <SEI>` verb
+  (output is always JSON; matched to legis's shipped CLI, no `--json` flag),
   consuming legis's authoritative `governance_read.v1` (verified clearances only:
   operator override / cleared sign-off). Mirrored BYTE-FOR-BYTE as the source of
   truth at `contracts/governance_read.v1.schema.json` (legis OWNS it; warpline
