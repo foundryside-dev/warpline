@@ -137,6 +137,13 @@ def test_reverify_response_fixture_carries_honesty_fields() -> None:
     # The producer timestamp (staleness axis) lives inside impact_completeness; the
     # redundant top-level data.generated_at was removed (federation reads one object).
     assert "generated_at" not in data
+    # Rung-2 risk-as-verification posture is always emitted (here: no bundle ->
+    # the completeness gate leaves it unavailable, never a warpline clean).
+    rv = data["risk_verification"]
+    assert isinstance(rv, dict)
+    assert rv["risk"] in {"proven", "unavailable"}
+    assert isinstance(rv["reason_code"], str)
+    assert rv["reason"]["reason_class"] != "clean" or rv["risk"] == "proven"
     assert "staleness" in data
     assert "items" in data
     # PDR-0023: the resolve join is interrogable — every changed ref lands in

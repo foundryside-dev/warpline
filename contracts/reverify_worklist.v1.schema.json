@@ -62,6 +62,7 @@
           }
         },
         "impact_completeness": { "$ref": "#/$defs/impact_completeness" },
+        "risk_verification": { "$ref": "#/$defs/risk_verification" },
         "items": { "type": "array", "items": { "$ref": "#/$defs/item" } },
         "resolved": { "type": "array" },
         "unresolved": { "type": "array" }
@@ -120,6 +121,20 @@
             ]
           }
         }
+      }
+    },
+    "risk_verification": {
+      "description": "warpline's risk-as-verification posture for this change (Rung 2). Always emitted. risk='proven' (reason_code 'attested_clean') ONLY when the worklist is impact-complete AND every affected entity is attested clean at its current body by a supplied, PUSHED wardline-attest-2 bundle (mechanical (commit, content_hash) equality; the HMAC signature is NOT verified by warpline, so signature_verified is false and authority is 'wardline' — an echo, never a warpline-minted clean). Otherwise risk='unavailable' with a machine reason_code (completeness_not_declared, completeness_partial, verification_source_absent, attestation_schema_unknown, attestation_dirty, attestation_no_commit, attestation_commit_mismatch, attestation_unkeyed, attestation_incomplete).",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["risk", "reason_code", "reason"],
+      "properties": {
+        "risk": { "enum": ["proven", "unavailable"] },
+        "reason_code": { "type": "string" },
+        "reason": { "type": "object" },
+        "authority": { "type": "string" },
+        "source": { "type": "string" },
+        "signature_verified": { "type": "boolean" }
       }
     },
     "item": {

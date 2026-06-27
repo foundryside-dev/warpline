@@ -29,6 +29,12 @@ is a new contract URI, never a mutation of `v1`.
   content_hash, non-clean verdict, ANY unmatched affected entity) degrades to
   `unavailable` with an explicit machine reason; proven-good is all-or-nothing.
   Pure consumer (`_attest.worklist_risk`); layered on D1's completeness gate.
+  WIRED on the real surfaces: `warpline reverify --attest-bundle <file>` (CLI) and
+  the `attest_bundle` MCP arg ingest the pushed bundle; the verdict is emitted at
+  `data.risk_verification` on EVERY worklist (without a bundle it honestly reads
+  `verification_source_absent`). The per-SEI current content_hash is fetched from
+  the same loomweave `entity_resolve` round trip warpline already makes
+  (fail-soft). Documented in `contracts/reverify_worklist.v1.schema.json`.
 - **Impact-completeness self-assessment (federation D1).** The reverify worklist
   now carries an additive `data.impact_completeness` object —
   `{status: complete|partial|unknown, as_of, graph_fresh, graph_ref, depth_capped,

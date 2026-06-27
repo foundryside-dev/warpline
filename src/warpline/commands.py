@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from warpline._attest import worklist_risk
 from warpline._blast import enrich_blast, resolve_changed_inputs, rev_range_commits
 from warpline._completeness import compute_impact_completeness
 from warpline._enrichment import (
@@ -30,6 +31,7 @@ from warpline.loomweave import (
     LoomweaveMcpClient,
     LoomweaveProbe,
     loomweave_resolve_qualnames,
+    resolve_content_hash_for_locator,
 )
 from warpline.propagation import blast_radius as compute_blast_radius
 from warpline.refs import (
@@ -662,6 +664,44 @@ def _lazy_capture_if_missing(
         return
 
 
+def _attest_content_hashes(
+    repo: Path,
+    affected_seis: list[str],
+    items: list[dict[str, Any]],
+    loomweave_command: str | None,
+) -> dict[str, str]:
+    """Build ``{sei: current content_hash}`` for the worklist's affected SEIs via
+    loomweave, for the risk-as-verification consult. Fail-soft and read-only: an
+    unreachable loomweave (or an unresolvable entity) yields no hash for that SEI,
+    so the attest consumer honestly leaves it unmatched (``attestation_incomplete``)
+    — NEVER a faked-good match. Only called when an attest bundle was supplied."""
+
+    sei_to_locator: dict[str, str] = {}
+    for it in items:
+        entity = it.get("entity", {})
+        sei = entity.get("sei")
+        loc = entity.get("locator")
+        if isinstance(sei, str) and sei and isinstance(loc, str) and loc:
+            sei_to_locator.setdefault(sei, loc)
+    by_sei: dict[str, str] = {}
+    try:
+        command = loomweave_command or os.environ.get("WARPLINE_LOOMWEAVE_COMMAND", "loomweave")
+        client = LoomweaveMcpClient(repo=repo, command=command)
+        try:
+            for sei in affected_seis:
+                locator = sei_to_locator.get(sei)
+                if locator is None:
+                    continue
+                content_hash = resolve_content_hash_for_locator(client, locator)
+                if content_hash:
+                    by_sei[sei] = content_hash
+        finally:
+            _close_if_supported(client)
+    except Exception:  # noqa: BLE001 — advisory consult; never block the worklist.
+        return by_sei
+    return by_sei
+
+
 # ---------------------------------------------------------------------------
 # warpline_impact_radius_get — warpline.impact_radius.v1
 # ---------------------------------------------------------------------------
@@ -761,6 +801,7 @@ def reverify_worklist(
     risk_client: RiskClient | None = None,
     legis_client: LegisClient | None = None,
     loomweave_command: str | None = None,
+    attest_bundle: Any = None,
 ) -> dict[str, Any]:
     refs = parse_changed_refs(changed_refs)
     with WarplineStore.open(default_store_path(repo)) as store:
@@ -876,6 +917,16 @@ def reverify_worklist(
             "unavailable": sum(1 for it in items if it["verification"]["state"] == "unavailable"),
             "local_source_configured": local_source_configured,
         }
+        # Risk-as-verification (Rung 2): the SEIs of the FULL filtered+sorted set
+        # (pre-page, like verification_summary) — the verdict describes the whole
+        # change's worklist, never a single page. Deduped, order-preserving.
+        affected_seis: list[str] = []
+        _seen_seis: set[str] = set()
+        for it in items:
+            sei = it.get("entity", {}).get("sei")
+            if isinstance(sei, str) and sei and sei not in _seen_seis:
+                _seen_seis.add(sei)
+                affected_seis.append(sei)
         # group_by buckets the FULL filtered+sorted list (the grouped view is a
         # complete projection, not a page); the flat list still paginates.
         grouped = apply_group_by(items, tool="warpline_reverify_worklist_get", group_by=group_by)
@@ -923,9 +974,32 @@ def reverify_worklist(
             unresolved=unresolved,
             depth_capped=bool(result.get("depth_capped", False)),
         )
+        # Risk-as-verification (Rung 2): warpline's honest verification posture for
+        # this change. Always emitted. A complete worklist whose every affected
+        # entity is attested clean at its CURRENT body by the PUSHED, UNTRUSTED
+        # wardline-attest-2 `attest_bundle` reads proven-good (echo of wardline's
+        # authority, HMAC unverified); absent/partial/unmatched degrades to
+        # `unavailable` with an explicit machine reason — never a warpline clean.
+        # The per-SEI current content_hash is sourced from loomweave (fail-soft;
+        # only paid when a bundle is supplied — an unreachable loomweave yields no
+        # hashes, so every entity is honestly unmatched, never faked-good).
+        content_hash_by_sei = (
+            _attest_content_hashes(repo, affected_seis, items, loomweave_command)
+            if attest_bundle is not None
+            else {}
+        )
+        risk_verification = worklist_risk(
+            impact_completeness,
+            affected_seis=affected_seis,
+            bundle=attest_bundle,
+            # only paid when a bundle is present (worklist_risk ignores it otherwise)
+            current_commit=resolve_commit(repo, "HEAD") if attest_bundle is not None else None,
+            content_hash_for_sei=content_hash_by_sei.get,
+        )
         data = {
             "completeness": completeness,
             "impact_completeness": impact_completeness,
+            "risk_verification": risk_verification,
             "staleness": staleness,
             "verification_summary": verification_summary,
             "resolved": resolved,

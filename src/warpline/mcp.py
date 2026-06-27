@@ -210,6 +210,12 @@ TOOL_SPECS = [
             # with no transport is honestly ``disabled``, never silently dropped —
             # so this is a kept promise, not a re-advertised-dead field.
             "include_federation": {"type": "boolean"},
+            # attest_bundle: a PUSHED, UNTRUSTED wardline-attest-2 bundle (the JSON
+            # object). When supplied, data.risk_verification reads proven-good iff a
+            # complete worklist's every affected entity is attested clean at its
+            # current body (mechanical (commit, content_hash) equality; the HMAC is
+            # NOT verified by warpline). Absent/partial/unmatched stays unavailable.
+            "attest_bundle": {"type": "object"},
         },
         required=["repo"],
         metadata=_READ_META_LW,
@@ -439,6 +445,7 @@ def _h_reverify(args: dict[str, Any]) -> dict[str, Any]:
         include_federation=include_federation,
         risk_client=risk_client,
         legis_client=None,
+        attest_bundle=args.get("attest_bundle"),
     )
 
 
@@ -534,6 +541,7 @@ _HANDLER_CONSUMES: dict[str, frozenset[str]] = {
             "cursor",
             "limit",
             "include_federation",
+            "attest_bundle",
         }
     ),
     # capture honors or loudly rejects EVERY advertised field: no fast-follow

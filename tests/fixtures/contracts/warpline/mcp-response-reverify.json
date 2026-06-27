@@ -20,6 +20,15 @@
       "unresolved_count": 0,
       "reasons": ["no_snapshot"]
     },
+    "risk_verification": {
+      "risk": "unavailable",
+      "reason_code": "completeness_partial",
+      "reason": {
+        "reason_class": "partial",
+        "cause": "impact completeness is 'unknown', not 'complete' (reasons: ['no_snapshot']); the impact set is narrowed/partial and is not authoritative",
+        "fix": "resolve the partial-coverage reasons (recapture a fresh graph, raise traversal depth, resolve unmapped entities) and regenerate the worklist"
+      }
+    },
     "staleness": {"snapshot_commit": null, "commits_behind": null},
     "resolved": [
       {

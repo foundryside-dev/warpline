@@ -329,6 +329,17 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     reverify_parser.add_argument("--depth", type=int, default=2)
+    reverify_parser.add_argument(
+        "--attest-bundle",
+        type=Path,
+        default=None,
+        help=(
+            "path to a PUSHED wardline-attest-2 bundle (JSON). When supplied, a "
+            "complete worklist whose every affected entity is attested clean at its "
+            "current body reads proven-good in data.risk_verification (mechanical "
+            "(commit, content_hash) equality; HMAC signature NOT verified)."
+        ),
+    )
     reverify_parser.add_argument("--json", action="store_true")
 
     capture_snapshot_parser = sub.add_parser("capture-snapshot")
@@ -526,7 +537,14 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
         return 0
     if args.command == "reverify":
-        payload = commands.reverify_worklist(args.repo, args.changed_entity_key_id, args.depth)
+        attest_bundle = None
+        if args.attest_bundle is not None:
+            # PUSHED, UNTRUSTED payload — read + JSON-parse only; the consumer does
+            # the mechanical validation (schema/dirty/commit/content_hash).
+            attest_bundle = json.loads(Path(args.attest_bundle).read_text(encoding="utf-8"))
+        payload = commands.reverify_worklist(
+            args.repo, args.changed_entity_key_id, args.depth, attest_bundle=attest_bundle
+        )
         print(json.dumps(payload, sort_keys=True) if args.json else json.dumps(payload, indent=2))
         return 0
     if args.command == "capture-snapshot":

@@ -74,7 +74,9 @@ def _no_snapshot_worklist(tmp_path: Path) -> dict:
     return commands.reverify_worklist(repo, [a], depth=2, loomweave_command="/no/such/binary")
 
 
-def _complete_worklist(tmp_path: Path) -> dict:
+def _seed_complete(tmp_path: Path) -> tuple[Path, int]:
+    """A FULL snapshot AT HEAD with no out-edges -> fresh graph, no depth cap, zero
+    unresolved -> impact_completeness.status == complete. Returns (repo, a)."""
     repo = _repo(tmp_path)
     head = _git(repo, "rev-parse", "HEAD")
     with WarplineStore.open(default_store_path(repo)) as store:
@@ -82,9 +84,12 @@ def _complete_worklist(tmp_path: Path) -> dict:
         a = store.ensure_entity_key(
             repo_id, locator="python:function:m.py::a", sei="loomweave:eid:aaaa", commit_sha=head
         )
-        # FULL snapshot AT HEAD (commits_behind == 0) with no out-edges from the
-        # changed entity -> fresh graph, no depth cap, zero unresolved -> complete.
         store.create_edge_snapshot(repo_id, head, "loomweave", "t", "FULL")
+    return repo, a
+
+
+def _complete_worklist(tmp_path: Path) -> dict:
+    repo, a = _seed_complete(tmp_path)
     return commands.reverify_worklist(repo, [a], depth=2)
 
 
@@ -149,6 +154,42 @@ def test_real_complete_output_validates_and_is_complete(tmp_path: Path) -> None:
     assert ic["depth_capped"] is False
     assert ic["unresolved_count"] == 0
     assert ic["reasons"] == []
+    # Rung 2: complete but NO attest bundle supplied -> the honest gap, on the
+    # real command path (not just the pure consumer).
+    assert env["data"]["risk_verification"]["risk"] == "unavailable"
+    assert env["data"]["risk_verification"]["reason_code"] == "verification_source_absent"
+
+
+def _matching_bundle(commit: str, sei: str, content_hash: str) -> dict:
+    return {
+        "schema": "wardline-attest-2",
+        "payload": {
+            "commit": commit, "dirty": False, "attested_at": "2026-06-27",
+            "sei_source": "loomweave", "posture": {},
+            "boundaries": [{"qualname": "x", "sei": sei, "content_hash": content_hash,
+                            "verdict": "clean", "tier": "INTEGRAL"}],
+        },
+        "signature": {"alg": "HMAC-SHA256", "value": "x", "key_id": "y"},
+    }
+
+
+def test_reverify_path_consumes_bundle_honestly_without_loomweave(tmp_path: Path) -> None:
+    # A bundle IS supplied and the worklist is complete, but loomweave is
+    # unreachable (bad command) -> warpline cannot fetch the current content_hash,
+    # so the entity is honestly unmatched (attestation_incomplete), NEVER faked-good.
+    # Proves the bundle is consumed on the real command path + the fail-soft edge.
+    from warpline import commands
+
+    repo, a = _seed_complete(tmp_path)
+    head = _git(repo, "rev-parse", "HEAD")
+    bundle = _matching_bundle(head, "loomweave:eid:aaaa", "somehash")
+    env = commands.reverify_worklist(
+        repo, [a], depth=2, attest_bundle=bundle, loomweave_command="/no/such/binary"
+    )
+    _validate(env)
+    rv = env["data"]["risk_verification"]
+    assert rv["risk"] == "unavailable"
+    assert rv["reason_code"] == "attestation_incomplete"
 
 
 def test_real_partial_output_validates_and_is_partial(tmp_path: Path) -> None:
@@ -216,6 +257,25 @@ def test_mcp_handler_surface_emits_impact_completeness(tmp_path: Path) -> None:
     assert ic["status"] == "partial"
     assert "as_of" in ic
     assert env["data"]["completeness"] == "FULL"  # FROZEN raw string still present
+    # Rung-2 verdict is emitted on the MCP surface; a partial worklist can't be proven.
+    assert env["data"]["risk_verification"]["reason_code"] == "completeness_partial"
+
+
+def test_mcp_handler_consumes_pushed_attest_bundle(tmp_path: Path) -> None:
+    # The PUSHED bundle arrives as an MCP arg and is consumed on the handler path.
+    from warpline import mcp
+
+    repo, a = _seed_complete(tmp_path)
+    head = _git(repo, "rev-parse", "HEAD")
+    bundle = _matching_bundle(head, "loomweave:eid:aaaa", "somehash")
+    env = mcp._h_reverify(
+        {"repo": str(repo), "changed_entity_key_ids": [a], "depth": 2, "attest_bundle": bundle}
+    )
+    _validate(env)
+    # bundle consumed (complete worklist), but loomweave can't key 'aaaa' here, so
+    # the verdict is honest unavailable — NOT verification_source_absent (which would
+    # mean the bundle was ignored), proving the bundle reached the consumer.
+    assert env["data"]["risk_verification"]["reason_code"] != "verification_source_absent"
 
 
 def test_cli_surface_emits_impact_completeness(tmp_path: Path, capsys) -> None:
