@@ -92,6 +92,30 @@ trigger crossed).
   session; verification-freshness remains built-but-unreleased on
   `plan/verification-freshness`.
 
+## 2026-06-29 readings — Plainweave requirements consumer (4th federation member)
+
+Acceptance session for the requirements consumer (PDR-0008). No reversal trigger crossed;
+the federation seam *strengthened*.
+
+- **Federation member coverage (input) — 3 → 4 live consumers.** The reverify
+  `include_federation` seam now has all four members as real consumers: filigree (work),
+  wardline (risk), legis (governance), and **plainweave (requirements)** — the dimension
+  warpline had never wired. `requirements` no longer rides the reserved
+  `disabled`/`unavailable` default when the producer is present.
+- **Reverify honesty coverage (input) — held, with the no-silent-clean invariant
+  strengthened.** The requirements scalar never collapses `unavailable`→`absent`: a
+  reachable producer returning per-entity `unavailable`, or a worklist entity with no SEI
+  (identity-unresolved), surfaces envelope `unavailable`, not a confident-empty `absent`.
+  Pinned by a discriminating fault-injection test (caught by the adversarial review).
+- **Authority-boundary guardrail — held.** No plainweave patch (read-only consult + a
+  vendored *copy* of plainweave's golden into warpline fixtures); advisory-never-gates and
+  `meta.local_only`/`peer_side_effects:[]` verified on the requirements path.
+- **Suite** — full warpline suite 569 passed / 1 skipped / 0 failed; ruff + `mypy src`
+  clean. North-star unchanged (no new dogfood-eval run this session).
+- **Watch (PDR-0008 reversal trigger):** whether the installed plainweave actually
+  advertises `requirements-enrichment` in real member repos — if it never does, the
+  dimension reads perpetually `disabled` and adds no signal.
+
 ## Reading notes
 
 - The north-star is deliberately agent-workflow based. Warpline wins only when an

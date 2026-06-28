@@ -1,6 +1,6 @@
 # Roadmap - Warpline
 
-Updated: 2026-06-24 (PDR-0006 spine hardening SHIPPED in v1.2.0; PDR-0005 verification-freshness is the active bet)
+Updated: 2026-06-29 (PDR-0008 — Plainweave requirements consumer accepted: all four federation members are now live reverify consumers; the Rung-2 "light up inert dimensions" item is complete pending the `release/1.2.0` cut)
 
 Sequencing, WSJF / cost-of-delay, and dated forecasts are produced by
 program-management. This file records bets as intent, not a delivery schedule.
@@ -54,11 +54,16 @@ them ever gate.
   test pass, Legis attestation, Filigree closure), not just `last_changed`.
   Reverify shifts from "changed since HEAD~1" to *"changed since last proven-good,"*
   with a trust-decay signal.
-- **Light up the flagship's inert dimensions.** The reverify worklist freezes four
-  enrichment slots; only work (Filigree, SEAM 2) is live. Implement SEAM 3 (Wardline
-  risk-by-SEI) and SEAM 4 (Legis governance/provenance) inbound reads so the
-  worklist sorts by risk/governance, not just depth. (Both RESERVED-SHAPE — proving
-  consumption is what freezes them.)
+- **Light up the flagship's inert dimensions — DONE (all four members live).** The
+  reverify worklist's `include_federation` seam once had only work (Filigree) live; the
+  other dimensions rode reserved. Now all four federation members are real consumers:
+  work (Filigree), risk (Wardline, via the attest-2 / `governance_read.v1`-adjacent
+  consumers — committed on `release/1.2.0`), governance (Legis, `governance_read.v1` —
+  committed), and **requirements (Plainweave, `weft.plainweave.requirements_enrichment.v1`
+  — PDR-0008, built+accepted, uncommitted on `release/1.2.0`)**. Each is advisory,
+  honest (`cause + reason_class + fix`), never gates, and never collapses
+  `unavailable`→`absent`. RESERVED-SHAPE consumption is now proven for every member; the
+  remaining step is the `release/1.2.0` version cut (owner escalation).
 
 ### Rung 3 — Predictive *(forecast — the "throw tokens at it" tier)*
 
