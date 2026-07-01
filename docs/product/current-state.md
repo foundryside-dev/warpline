@@ -48,8 +48,14 @@ federation-enriched reverify, now backed by the released stack.
    fully live. (Minor: `plainweave --version` = 1.2.0 while `uv tool list` caches v1.1.0 — verb
    works regardless. In warpline's own repo the member reads `unavailable` since warpline isn't a
    plainweave project — expected.)
-2. **5th-producer hub handover** — GS-7 oracle wiring + glossary freeze (OD-5). Outward-facing.
-   The refreshed warpline-side handover (`docs/integration/2026-06-29-...`, still untracked) is ready.
+2. **5th-producer hub handover** — the warpline-side handover is **FINALIZED + committed**
+   (`docs/integration/2026-07-01-warpline-5th-producer-handover.md`), reflecting the released
+   v1.3.0 / fully-live-4-member state (wardline auto-wired vs legis/plainweave capability-gated
+   corrected; manifest-refresh + plainweave-reship marked done, not owner action items). It asks
+   the hub owner for **three outward-facing acts**: (a) wire warpline into the GS-7 oracle + turn
+   the gate on (OD-5 resolved-direction), (b) sign the glossary-freeze attestation, (c) decide
+   whether the 3 consumer goldens join the GS-7 fixture set. **Delivering it to the hub is the
+   owner's outward act.**
 3. **scan_manifest seam owner-side** (above) — commit the wardline diff, align plainweave, bless the
    contract hub-side; then `weft-9a35aa00e7` / AMBER-2 closes.
 4. **Swarm coordination / provenance (owner awareness).** Uncoordinated swarm sessions keep landing
@@ -66,15 +72,16 @@ federation-enriched reverify, now backed by the released stack.
   green (572 passed), tagged + **pushed** `v1.3.0`, `uv tool install` → live MCP binary 1.3.0,
   and **retired the heddle-venv shadow** (bare `warpline` now 1.3.0).
 - **Also this session (sibling/federation, at owner direction):** committed the conformance
-  manifest refresh (`18548ca`); refreshed the 5th-producer handover; built the wardline
-  `scan_manifest` seam + delta-mode flag; verified two weft interface-gap claims (`scan_manifest`
-  real → built it; `verification_events` claim now stale → warpline shipped it); ran a swarm
-  reconcile (drift, not damage).
+  manifest refresh (`18548ca`); **finalized + committed the 5th-producer handover**
+  (`2026-07-01`, ready to deliver); built the wardline `scan_manifest` seam + delta-mode flag;
+  verified two weft interface-gap claims (`scan_manifest` real → built it; `verification_events`
+  claim now stale → warpline shipped it); ran a swarm reconcile (drift, not damage).
 - roadmap.md + metrics.md updated for the release; no reversal trigger crossed.
 
 ## Next session starts here
 
-With #1 **resolved** (plainweave reshipped — the requirements member is live, 4-member federation
-fully lit), the top pickups are **#2 the 5th-producer hub handover** and **#3 committing the
-scan_manifest seam** (closes `weft-9a35aa00e7`). Failing those, the clean repo-local pickups
-`warpline-9eae3eb86a` (ungated) or `warpline-17242c627b`.
+#1 resolved (requirements member live) and #2's handover is now finalized + committed — so #2's
+only remainder is the **owner delivering it to the hub** (outward act). The top hands-on pickups
+are **#3 committing the scan_manifest seam** (closes `weft-9a35aa00e7`) and the clean repo-local
+follow-ups `warpline-9eae3eb86a` (ungated) or `warpline-17242c627b`. Also pending: pushing the
+local product-doc commits (`main` is ahead of `origin/main`).
