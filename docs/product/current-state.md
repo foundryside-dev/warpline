@@ -48,14 +48,11 @@ federation-enriched reverify, now backed by the released stack.
    fully live. (Minor: `plainweave --version` = 1.2.0 while `uv tool list` caches v1.1.0 — verb
    works regardless. In warpline's own repo the member reads `unavailable` since warpline isn't a
    plainweave project — expected.)
-2. **5th-producer hub handover** — the warpline-side handover is **FINALIZED + committed**
-   (`docs/integration/2026-07-01-warpline-5th-producer-handover.md`), reflecting the released
-   v1.3.0 / fully-live-4-member state (wardline auto-wired vs legis/plainweave capability-gated
-   corrected; manifest-refresh + plainweave-reship marked done, not owner action items). It asks
-   the hub owner for **three outward-facing acts**: (a) wire warpline into the GS-7 oracle + turn
-   the gate on (OD-5 resolved-direction), (b) sign the glossary-freeze attestation, (c) decide
-   whether the 3 consumer goldens join the GS-7 fixture set. **Delivering it to the hub is the
-   owner's outward act.**
+2. **✅ CLOSED (2026-07-01) — 5th-producer conformance obligation discharged (PDR-0011).** The
+   finalized handover (`docs/integration/2026-07-01-warpline-5th-producer-handover.md`) was
+   **delivered to the weft hub** by the owner. warpline's OD-5 obligation is complete; the GS-7
+   oracle wiring, the glossary-freeze attestation, and the consumer-goldens decision are now the
+   **hub's** acts, not warpline's. Reopens only if the hub returns the package for changes.
 3. **scan_manifest seam — only the hub bless + close remain (governance, not engineering).** The
    wardline producer + plainweave consumer are shipped (above). Remaining: bless
    `weft.wardline.scan_manifest.v1` hub-side, then close `weft-9a35aa00e7` / AMBER-2. Package:
@@ -74,16 +71,18 @@ federation-enriched reverify, now backed by the released stack.
   green (572 passed), tagged + **pushed** `v1.3.0`, `uv tool install` → live MCP binary 1.3.0,
   and **retired the heddle-venv shadow** (bare `warpline` now 1.3.0).
 - **Also this session (sibling/federation, at owner direction):** committed the conformance
-  manifest refresh (`18548ca`); **finalized + committed the 5th-producer handover**
-  (`2026-07-01`, ready to deliver); built the wardline `scan_manifest` seam + delta-mode flag;
+  manifest refresh (`18548ca`); finalized the 5th-producer handover, which the owner then
+  **delivered to the weft hub** (PDR-0011 — OD-5 obligation discharged); built the wardline
+  `scan_manifest` seam + delta-mode flag;
   verified two weft interface-gap claims (`scan_manifest` real → built it; `verification_events`
   claim now stale → warpline shipped it); ran a swarm reconcile (drift, not damage).
 - roadmap.md + metrics.md updated for the release; no reversal trigger crossed.
 
 ## Next session starts here
 
-#1 (requirements live), #2 (handover finalized), and #3 (scan_manifest seam shipped) are all done
-or owner-side-only — what's left are the owner's outward acts (deliver the #2 handover; bless +
-close the #3 contract) plus pushing the local product-doc commits (`main` is ahead of
-`origin/main`). The top hands-on pickups are the clean repo-local follow-ups `warpline-9eae3eb86a`
+#1 (requirements live), #2 (handover **delivered** — OD-5 discharged, PDR-0011), and #3
+(scan_manifest seam shipped) are all closed from warpline's side; the doc commits are pushed
+(`origin/main` in sync). The only owner-side remainder is the hub blessing + closing the #3
+`scan_manifest` contract. **With the release + the federation obligations behind us, the next
+capability horizon is Rung 3 (predictive).** Clean hands-on pickups meanwhile: `warpline-9eae3eb86a`
 (ungated) or `warpline-17242c627b`.

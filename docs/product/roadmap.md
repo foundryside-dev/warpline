@@ -1,6 +1,6 @@
 # Roadmap - Warpline
 
-Updated: 2026-07-01 (PDR-0010 — **v1.3.0 RELEASED** to main, tagged, pushed, installed: verification-freshness + four-member federation + project_status + Phase-2 hardening. The Rung-2 diagnostic tier is shipped; near-term intent is the 5th-producer hub handover, then Rung 3)
+Updated: 2026-07-01 (PDR-0011 — the 5th-producer conformance handover was **DELIVERED to the weft hub**; warpline's OD-5 obligation is discharged [GS-7 wiring + glossary freeze are now the hub's]. v1.3.0 released [PDR-0010]. Near-term intent → **Rung 3 (predictive)**)
 
 Sequencing, WSJF / cost-of-delay, and dated forecasts are produced by
 program-management. This file records bets as intent, not a delivery schedule.
@@ -153,9 +153,10 @@ attributed to its owning member, composed at read time, never mirrored.**
 
 ## Now (committed)
 
-The Rung-2 diagnostic tier is complete and **shipped as v1.3.0** (PDR-0010). Near-term
-intent shifts to the **5th-producer hub handover** (GS-7 wiring + glossary freeze — an
-owner escalation); **Rung 3 (predictive)** is the next capability tier.
+The Rung-2 diagnostic tier is complete and **shipped as v1.3.0** (PDR-0010); the
+**5th-producer conformance handover is delivered to the hub** (PDR-0011 — warpline's OD-5
+obligation discharged). Near-term intent → **Rung 3 (predictive)**; the GS-7 oracle wiring +
+glossary freeze are now the hub's to execute, not warpline's.
 
 - **Rung 2 — verification-freshness** — *DONE* (PDR-0005 → accepted PDR-0007). The
   `last_verified` trust-decay axis, merged and validated on a real repo against its
@@ -189,10 +190,10 @@ owner escalation); **Rung 3 (predictive)** is the next capability tier.
 - **Rung 2 — sibling-sourced verification** — wardline-resolved / filigree-closed /
   legis-attested as `last_verified` sources, once those sibling surfaces exist (each
   an owner/sibling escalation; honest-absent until then).
-- **Federation conformance oracle inclusion** — warpline's 18 golden vectors join the
-  GS-7 oracle as the 5th producer. The warpline-side package is DONE (portable fixture
-  + handover doc); the remaining GS-7 wiring + glossary freeze is the owner's
-  escalation (OD-5 resolved-direction).
+- **Federation conformance oracle inclusion — warpline-side DELIVERED (PDR-0011).**
+  warpline's 19 golden vectors + the finalized handover were delivered to the weft hub; the
+  GS-7 oracle wiring + glossary freeze are now the **hub's** to execute (OD-5 resolved-direction).
+  No longer a warpline obligation — reopens only if the hub returns the package for changes.
 
 ## Later (directional bets, no order, no dates)
 
