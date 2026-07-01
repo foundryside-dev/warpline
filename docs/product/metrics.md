@@ -159,10 +159,13 @@ crossed by the release.
   consumers + `project_status`) is live on `main`/`v1.3.0` and installed into the MCP tool
   (`~/.local/bin/warpline` = 1.3.0; the stale heddle-venv shadow retired, so bare
   `warpline` is 1.3.0 too). No new dogfood-eval run this session.
-- **⚠️ Watch still degraded (PDR-0008 / PDR-0010 known gap):** the `requirements`
-  dimension reads `disabled` in practice until the **plainweave producer binary is
-  reshipped** (v1.0.0 → v1.1.0 on PATH). Shipped consumer is correct; the live contract
-  stays dark until that sibling install — owner escalation, unchanged by this release.
+- **✅ Watch RESOLVED (2026-07-01, PDR-0008 / PDR-0010):** the plainweave producer was
+  reshipped — the installed binary now advertises **and** serves `requirements-enrichment`,
+  and warpline's `PlainweaveRequirementsClient.available()` = **True**, so the `requirements`
+  dimension is **wired** (no longer `disabled`). The **four-member federation is fully live**.
+  (Reads `unavailable` in warpline's own repo since it isn't a plainweave project — expected;
+  present/absent in real plainweave member repos. Minor: `plainweave --version` 1.2.0 vs
+  `uv tool list` cache v1.1.0 — verb works regardless.)
 
 ## Reading notes
 

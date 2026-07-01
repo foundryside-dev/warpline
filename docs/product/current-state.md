@@ -41,11 +41,13 @@ federation-enriched reverify, now backed by the released stack.
 
 ## Open questions / blocked-on-owner (escalations)
 
-1. **Ship the plainweave producer so the requirements member goes live (reinstall).** The 4th
-   federation member ships in 1.3.0 but reads `disabled` in practice: the installed `plainweave`
-   is **stale (v1.0.0, no `requirements-enrichment` verb)** vs source v1.1.0 — warpline's probe
-   hits the stale binary. `uv tool install --force` on plainweave (+ its uncommitted
-   `pyproject.toml`/handoff) lifts it. **Top follow-up to make the shipped release fully live.**
+1. **✅ RESOLVED (2026-07-01) — plainweave reshipped; the requirements member is LIVE.** The
+   installed `plainweave` now advertises **and** serves `requirements-enrichment`, and warpline's
+   `PlainweaveRequirementsClient.available()` returns **True** — the 4th member is WIRED (reads
+   honest present/absent/unavailable per repo, no longer `disabled`). The 4-member federation is
+   fully live. (Minor: `plainweave --version` = 1.2.0 while `uv tool list` caches v1.1.0 — verb
+   works regardless. In warpline's own repo the member reads `unavailable` since warpline isn't a
+   plainweave project — expected.)
 2. **5th-producer hub handover** — GS-7 oracle wiring + glossary freeze (OD-5). Outward-facing.
    The refreshed warpline-side handover (`docs/integration/2026-06-29-...`, still untracked) is ready.
 3. **scan_manifest seam owner-side** (above) — commit the wardline diff, align plainweave, bless the
@@ -72,7 +74,7 @@ federation-enriched reverify, now backed by the released stack.
 
 ## Next session starts here
 
-**Escalation #1 — the plainweave reinstall** — is the top pickup: it's what makes the
-just-shipped 4th federation member actually live (else `requirements` reads `disabled`). Then
-#2 (hub handover) / #3 (commit the scan_manifest seam). Failing those, the clean repo-local
-pickups `warpline-9eae3eb86a` (ungated) or `warpline-17242c627b`.
+With #1 **resolved** (plainweave reshipped — the requirements member is live, 4-member federation
+fully lit), the top pickups are **#2 the 5th-producer hub handover** and **#3 committing the
+scan_manifest seam** (closes `weft-9a35aa00e7`). Failing those, the clean repo-local pickups
+`warpline-9eae3eb86a` (ungated) or `warpline-17242c627b`.
